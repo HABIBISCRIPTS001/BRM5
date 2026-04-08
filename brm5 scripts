@@ -32,6 +32,7 @@ local DEFAULT_CONFIG = {
     SHOW_FOV = true,
     TEAM_CHECK = false,
     VISIBILITY_CHECK = false,
+    WORLD_TIME_ENABLED = false,
     ANTI_RECOIL = false,
     ANTI_RECOIL_STRENGTH = 0.35,
     TARGET_PART = "Head",
@@ -920,6 +921,7 @@ local function saveSettings()
         SHOW_FOV = CONFIG.SHOW_FOV,
         TEAM_CHECK = CONFIG.TEAM_CHECK,
         VISIBILITY_CHECK = CONFIG.VISIBILITY_CHECK,
+        WORLD_TIME_ENABLED = CONFIG.WORLD_TIME_ENABLED,
         ANTI_RECOIL = CONFIG.ANTI_RECOIL,
         ANTI_RECOIL_STRENGTH = CONFIG.ANTI_RECOIL_STRENGTH,
         TARGET_PART = CONFIG.TARGET_PART,
@@ -2089,6 +2091,10 @@ createChoiceRow(aimbotMain, "TARGET_PART", "Target Part", {"Head", "Chest", "Hum
 end)
 
 local worldMain = createSection(pageWorld, "World")
+createToggle(worldMain, "WORLD_TIME_ENABLED", "Time Override", "Enable or disable the day/night override", function(value)
+    CONFIG.WORLD_TIME_ENABLED = value
+    applyWorldTime()
+end)
 createChoiceRow(worldMain, "WORLD_TIME", "Time Of Day", {"Day", "Night"}, function(choice)
     CONFIG.WORLD_TIME = choice
     applyWorldTime()
@@ -2390,6 +2396,10 @@ local function getEspColor(model, isVisible)
 end
 
 applyWorldTime = function()
+    if not CONFIG.WORLD_TIME_ENABLED then
+        return
+    end
+
     if CONFIG.WORLD_TIME == "Night" then
         Lighting.ClockTime = 22
         Lighting.TimeOfDay = "22:00:00"
