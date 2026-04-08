@@ -1,7 +1,3 @@
---[[
-    HABIBISCRIPTS
-    Login user: HABIBIONTOP
-]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
