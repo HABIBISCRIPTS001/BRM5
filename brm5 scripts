@@ -1,0 +1,2973 @@
+--[[
+    HABIBISCRIPTS
+    Login user: HABIBIONTOP
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local LocalMouse = LocalPlayer:GetMouse()
+
+local DEFAULT_CONFIG = {
+    LOGIN_USER = "HABIBIONTOP",
+    AIMBOT_ACTIVO = false,
+    ESP_ACTIVO = true,
+    ESP_NAME = true,
+    ESP_DISTANCE = true,
+    ESP_HIGHLIGHT = true,
+    ESP_TOGGLE_KEY = Enum.KeyCode.H,
+    SHOW_FOV = true,
+    TEAM_CHECK = false,
+    VISIBILITY_CHECK = false,
+    WORLD_TIME_ENABLED = false,
+    ANTI_RECOIL = false,
+    ANTI_RECOIL_STRENGTH = 0.35,
+    TARGET_PART = "Head",
+    WORLD_TIME = "Day",
+    FOV = 220,
+    SMOOTH = 0.18,
+    ESP_RENDER_DISTANCE = 900,
+    ENEMY_COLOR_R = 146,
+    ENEMY_COLOR_G = 86,
+    ENEMY_COLOR_B = 232,
+    TOGGLE_MENU_KEY = Enum.KeyCode.K,
+}
+
+local CONFIG = table.clone(DEFAULT_CONFIG)
+
+local STATE = {
+    running = true,
+    authenticated = false,
+    bindMode = false,
+    espBindMode = false,
+    rightMouseDown = false,
+    mouseMoveFailed = false,
+    dragging = false,
+    dragTarget = nil,
+    dragStart = nil,
+    dragOrigin = nil,
+    activeSlider = nil,
+    activeTab = "ESP",
+    lockedTarget = nil,
+    lastScan = 0,
+    lastNpcScan = 0,
+    lastWorldApply = 0,
+    lastCameraPitch = nil,
+}
+
+local TARGETS = {}
+local NPC_TARGETS = {}
+local ESP_CACHE = {}
+local VISIBILITY_CACHE = {}
+local UI_STATE = {
+    toggles = {},
+    sliders = {},
+    choiceRows = {},
+    pages = {},
+    navButtons = {},
+}
+local UI = {}
+
+local ELECTRIC_PRIMARY = Color3.fromRGB(140, 62, 255)
+local ELECTRIC_PRIMARY_SOFT = Color3.fromRGB(181, 120, 255)
+local ELECTRIC_SECONDARY = Color3.fromRGB(83, 28, 190)
+local ELECTRIC_SURFACE = Color3.fromRGB(12, 12, 18)
+local ELECTRIC_SURFACE_ALT = Color3.fromRGB(20, 20, 28)
+local ELECTRIC_PANEL = Color3.fromRGB(26, 27, 36)
+local ELECTRIC_PANEL_ALT = Color3.fromRGB(34, 35, 48)
+local ELECTRIC_TEXT = Color3.fromRGB(247, 245, 255)
+local ELECTRIC_MUTED = Color3.fromRGB(167, 160, 194)
+local ELECTRIC_DIM = Color3.fromRGB(112, 104, 144)
+
+local ESP_VISIBLE_COLOR = ELECTRIC_PRIMARY
+local ESP_HIDDEN_COLOR = Color3.fromRGB(255, 255, 255)
+local ESP_TEAM_VISIBLE_COLOR = Color3.fromRGB(196, 158, 255)
+
+local refreshUi
+local applyWorldTime
+
+local SETTINGS_FILE = "habibi_suite_settings.json"
+local AIMBOT_BIND_NAME = "HabibiAimbotLock"
+local INPUT_CONN = nil
+local RENDER_CONN = nil
+local INPUT_ENDED_CONN = nil
+local SCAN_INTERVAL = 0.8
+local NPC_SCAN_INTERVAL = 3
+local VISIBILITY_CACHE_INTERVAL = 0.12
+local WORLD_APPLY_INTERVAL = 0.5
+local PANEL_OPEN_SCALE = 1
+local PANEL_CLOSED_SCALE = 0.96
+local TOGGLE_TWEEN_INFO = TweenInfo.new(0.14, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local TAB_TWEEN_INFO = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local CHOICE_TWEEN_INFO = TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local DISCORD_INVITE = "https://discord.gg/habibiscripts"
+
+local function getConfiguredEnemyColor()
+    return Color3.fromRGB(
+        math.clamp(math.floor(CONFIG.ENEMY_COLOR_R + 0.5), 0, 255),
+        math.clamp(math.floor(CONFIG.ENEMY_COLOR_G + 0.5), 0, 255),
+        math.clamp(math.floor(CONFIG.ENEMY_COLOR_B + 0.5), 0, 255)
+    )
+end
+
+local function pushNotification(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 4,
+        })
+    end)
+end
+
+local function addElectricEdge(parent, position, size, rotation, transparency)
+    local streak = Instance.new("Frame")
+    streak.Name = "ElectricEdge"
+    streak.AnchorPoint = Vector2.new(0.5, 0.5)
+    streak.Position = position
+    streak.Size = size
+    streak.Rotation = rotation
+    streak.BackgroundColor3 = ELECTRIC_PRIMARY
+    streak.BackgroundTransparency = transparency or 0.22
+    streak.BorderSizePixel = 0
+    streak.ZIndex = 0
+    streak.Parent = parent
+
+    local streakCorner = Instance.new("UICorner")
+    streakCorner.CornerRadius = UDim.new(1, 0)
+    streakCorner.Parent = streak
+
+    local streakGradient = Instance.new("UIGradient")
+    streakGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, ELECTRIC_PRIMARY_SOFT),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, ELECTRIC_PRIMARY),
+    })
+    streakGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.18, 0.14),
+        NumberSequenceKeypoint.new(0.82, 0.14),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    streakGradient.Parent = streak
+
+    local glow = Instance.new("Frame")
+    glow.Name = "Glow"
+    glow.AnchorPoint = Vector2.new(0.5, 0.5)
+    glow.Position = UDim2.fromScale(0.5, 0.5)
+    glow.Size = UDim2.new(1, 20, 1, 20)
+    glow.BackgroundColor3 = ELECTRIC_PRIMARY_SOFT
+    glow.BackgroundTransparency = 0.78
+    glow.BorderSizePixel = 0
+    glow.ZIndex = 0
+    glow.Parent = streak
+
+    local glowCorner = Instance.new("UICorner")
+    glowCorner.CornerRadius = UDim.new(1, 0)
+    glowCorner.Parent = glow
+end
+
+local function decorateElectricPanel(parent, compact)
+    addElectricEdge(parent, UDim2.new(0.17, 0, 0.16, 0), compact and UDim2.new(0, 128, 0, 3) or UDim2.new(0, 176, 0, 4), -10, 0.24)
+    addElectricEdge(parent, UDim2.new(0.78, 0, 0.18, 0), compact and UDim2.new(0, 92, 0, 3) or UDim2.new(0, 134, 0, 4), 8, 0.3)
+    addElectricEdge(parent, UDim2.new(0.29, 0, 0.84, 0), compact and UDim2.new(0, 102, 0, 3) or UDim2.new(0, 148, 0, 4), 12, 0.32)
+    addElectricEdge(parent, UDim2.new(0.77, 0, 0.83, 0), compact and UDim2.new(0, 76, 0, 3) or UDim2.new(0, 114, 0, 4), -11, 0.34)
+
+    local orb = Instance.new("Frame")
+    orb.Name = "ElectricOrb"
+    orb.AnchorPoint = Vector2.new(0.5, 0.5)
+    orb.Position = UDim2.new(0.82, 0, 0.14, 0)
+    orb.Size = compact and UDim2.new(0, 120, 0, 120) or UDim2.new(0, 160, 0, 160)
+    orb.BackgroundColor3 = ELECTRIC_PRIMARY
+    orb.BackgroundTransparency = 0.9
+    orb.BorderSizePixel = 0
+    orb.ZIndex = 0
+    orb.Parent = parent
+
+    local orbCorner = Instance.new("UICorner")
+    orbCorner.CornerRadius = UDim.new(1, 0)
+    orbCorner.Parent = orb
+
+    local orbGradient = Instance.new("UIGradient")
+    orbGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, ELECTRIC_PRIMARY),
+    })
+    orbGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.35),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    orbGradient.Rotation = 35
+    orbGradient.Parent = orb
+end
+
+local function getCurrentCamera()
+    local current = workspace.CurrentCamera
+    if current then
+        Camera = current
+    end
+    return Camera
+end
+
+local function getCharacter(model)
+    if typeof(model) == "Instance" and model:IsA("BasePart") then
+        return model.Parent
+    end
+    return model
+end
+
+local function getPlayerFromCharacter(model)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character == model then
+            return player
+        end
+    end
+    return nil
+end
+
+local function sameTeam(model)
+    local targetPlayer = getPlayerFromCharacter(model)
+    if not targetPlayer then
+        return false
+    end
+
+    if LocalPlayer.Team ~= nil and targetPlayer.Team ~= nil then
+        return LocalPlayer.Team == targetPlayer.Team
+    end
+
+    if LocalPlayer.TeamColor ~= nil and targetPlayer.TeamColor ~= nil then
+        return LocalPlayer.TeamColor == targetPlayer.TeamColor
+    end
+
+    return false
+end
+
+local function getTargetPart(model)
+    if not model then
+        return nil
+    end
+
+    local function findPart(name)
+        local direct = model:FindFirstChild(name)
+        if direct and direct:IsA("BasePart") then
+            return direct
+        end
+
+        local recursive = model:FindFirstChild(name, true)
+        if recursive and recursive:IsA("BasePart") then
+            return recursive
+        end
+
+        return nil
+    end
+
+    if CONFIG.TARGET_PART == "Head" then
+        return findPart("Head")
+            or findPart("UpperTorso")
+            or findPart("HumanoidRootPart")
+            or findPart("Torso")
+    end
+
+    if CONFIG.TARGET_PART == "Chest" then
+        return findPart("UpperTorso")
+            or findPart("Torso")
+            or findPart("HumanoidRootPart")
+            or findPart("Head")
+    end
+
+    return findPart("HumanoidRootPart")
+        or findPart("UpperTorso")
+        or findPart("Torso")
+        or findPart("Head")
+        or model.PrimaryPart
+end
+
+local function hasCombatRig(model)
+    if not model or not model:IsA("Model") then
+        return false
+    end
+
+    if getPlayerFromCharacter(model) then
+        return true
+    end
+
+    if model.Name == "Male" then
+        return getTargetPart(model) ~= nil
+    end
+
+    if model:FindFirstChildOfClass("Humanoid") then
+        return getTargetPart(model) ~= nil
+    end
+
+    if model:FindFirstChildOfClass("AnimationController") and getTargetPart(model) then
+        return true
+    end
+
+    local healthValue = model:FindFirstChild("Health") or model:FindFirstChild("Health", true)
+    if healthValue and healthValue:IsA("NumberValue") and getTargetPart(model) then
+        return true
+    end
+
+    return false
+end
+
+local function formatStudDistance(distance)
+    if distance < 100 then
+        return string.format("%.1f studs", distance)
+    end
+
+    return string.format("%d studs", math.floor(distance + 0.5))
+end
+
+local function getModelPhase(model)
+    local source = model and model:GetFullName() or "habibi"
+    local sum = 0
+    for index = 1, #source do
+        sum = (sum + string.byte(source, index) * index) % 997
+    end
+    return sum / 997
+end
+
+local function getElectricPulse(model)
+    local phase = getModelPhase(model) * math.pi * 2
+    local t = tick() * 3.6
+    local wave = (math.sin(t + phase) + 1) * 0.5
+    local flicker = (math.sin((t * 2.2) + (phase * 1.7)) + 1) * 0.5
+    return {
+        glowTransparency = 0.92 - (wave * 0.12),
+        slashTransparency = 0.72 - (flicker * 0.28),
+        edgeTransparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.48 - (wave * 0.14)),
+            NumberSequenceKeypoint.new(0.55, 0.04 + (flicker * 0.08)),
+            NumberSequenceKeypoint.new(1, 0.48 - (wave * 0.14)),
+        }),
+        chipStrokeTransparency = 0.3 - (wave * 0.18),
+        cardStrokeTransparency = 0.12 - (wave * 0.06),
+    }
+end
+
+local function getBillboardMetrics(distance)
+    local alpha = math.clamp((distance - 20) / 180, 0, 1)
+    local easedAlpha = alpha ^ 0.82
+    local scale = 1 - (easedAlpha * 0.46)
+
+    return {
+        width = math.max(136, math.floor((252 * scale) + 0.5)),
+        height = math.max(34, math.floor((64 * scale) + 0.5)),
+        nameTextSize = math.max(11, math.floor((15 * scale) + 0.5)),
+        distanceTextSize = math.max(9, math.floor((12 * scale) + 0.5)),
+        studsOffset = -4.45 - (easedAlpha * 0.9),
+    }
+end
+
+local function getTargetDisplayText(model)
+    local player = getPlayerFromCharacter(model)
+    if not player then
+        return model.Name
+    end
+
+    if player.DisplayName and player.DisplayName ~= player.Name then
+        return string.format("%s (@%s)", player.DisplayName, player.Name)
+    end
+
+    return player.Name
+end
+
+local function getAliveState(model)
+    if not model or not model:IsA("Model") then
+        return false
+    end
+
+    if model.Name == "Male" and getTargetPart(model) then
+        local downedValue = model:FindFirstChild("Downed", true)
+        if downedValue and downedValue:IsA("BoolValue") then
+            return not downedValue.Value
+        end
+
+        return true
+    end
+
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        return humanoid.Health > 0
+    end
+
+    local healthValue = model:FindFirstChild("Health") or model:FindFirstChild("Health", true)
+    if healthValue and healthValue:IsA("NumberValue") then
+        return healthValue.Value > 0
+    end
+
+    local downedValue = model:FindFirstChild("Downed") or model:FindFirstChild("Downed", true)
+    if downedValue and downedValue:IsA("BoolValue") and downedValue.Value then
+        return false
+    end
+
+    local animationController = model:FindFirstChildOfClass("AnimationController")
+    local root = getTargetPart(model)
+    return animationController ~= nil and root ~= nil
+end
+
+local function isTargetCandidate(model)
+    if not model or not model:IsA("Model") then
+        return false
+    end
+
+    if model == LocalPlayer.Character then
+        return false
+    end
+
+    local root = getTargetPart(model)
+    if not root then
+        return false
+    end
+
+    return hasCombatRig(model)
+end
+
+local function isValidTarget(model)
+    if not model or not model:IsA("Model") then return false end
+    if model == LocalPlayer.Character then return false end
+
+    if not isTargetCandidate(model) then
+        return false
+    end
+
+    if not getAliveState(model) then
+        return false
+    end
+
+    if CONFIG.TEAM_CHECK and sameTeam(model) then
+        return false
+    end
+
+    return true
+end
+
+local function isVisiblePosition(position, targetModel)
+    local cam = getCurrentCamera()
+    if not cam then
+        return false
+    end
+
+    local origin = cam.CFrame.Position
+    local direction = position - origin
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character, targetModel}
+    params.IgnoreWater = true
+
+    local hit = workspace:Raycast(origin, direction, params)
+    return hit == nil
+end
+
+local function getScreenDistance(position3D)
+    local cam = getCurrentCamera()
+    if not cam then
+        return math.huge, false
+    end
+
+    local screenPos, onScreen = cam:WorldToViewportPoint(position3D)
+    if not onScreen then
+        return math.huge, false
+    end
+
+    local center = cam.ViewportSize / 2
+    local delta = Vector2.new(screenPos.X, screenPos.Y) - center
+    return delta.Magnitude, true
+end
+
+local function isInsideFov(position3D)
+    local distance, onScreen = getScreenDistance(position3D)
+    return onScreen and distance <= CONFIG.FOV
+end
+
+local function refreshNpcTargets()
+    local seen = {}
+    local updated = {}
+
+    for _, instance in ipairs(workspace:GetDescendants()) do
+        if instance:IsA("Model")
+            and not seen[instance]
+            and instance ~= LocalPlayer.Character
+            and getPlayerFromCharacter(instance) == nil
+            and (instance.Name == "Male" or isTargetCandidate(instance))
+            and isValidTarget(instance)
+        then
+            seen[instance] = true
+        end
+    end
+
+    for model in pairs(seen) do
+        table.insert(updated, model)
+    end
+
+    NPC_TARGETS = updated
+end
+
+local function refreshTargets()
+    local updated = {}
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and isValidTarget(player.Character) then
+            table.insert(updated, player.Character)
+        end
+    end
+
+    if tick() - STATE.lastNpcScan >= NPC_SCAN_INTERVAL then
+        STATE.lastNpcScan = tick()
+        refreshNpcTargets()
+    end
+
+    for _, model in ipairs(NPC_TARGETS) do
+        if isValidTarget(model) then
+            table.insert(updated, model)
+        end
+    end
+
+    TARGETS = updated
+end
+
+local function getVisibilityCached(model, position)
+    local cached = VISIBILITY_CACHE[model]
+    local now = tick()
+
+    if cached and (now - cached.lastCheck) <= VISIBILITY_CACHE_INTERVAL then
+        return cached.visible
+    end
+
+    local visible = isVisiblePosition(position, model)
+    VISIBILITY_CACHE[model] = {
+        visible = visible,
+        lastCheck = now,
+    }
+    return visible
+end
+
+local function getBestTarget()
+    local bestPart = nil
+    local bestScreenDistance = math.huge
+
+    for _, model in ipairs(TARGETS) do
+        if isValidTarget(model) then
+            local part = getTargetPart(model)
+            if part then
+                local visible = true
+                if CONFIG.VISIBILITY_CHECK then
+                    visible = getVisibilityCached(model, part.Position)
+                end
+
+                if not visible then
+                    continue
+                end
+
+                local screenDistance, onScreen = getScreenDistance(part.Position)
+                if onScreen and screenDistance <= CONFIG.FOV and screenDistance < bestScreenDistance then
+                    bestScreenDistance = screenDistance
+                    bestPart = part
+                end
+            end
+        end
+    end
+
+    return bestPart
+end
+
+local function targetLockValid(part)
+    if not part or not part.Parent then
+        return false
+    end
+
+    local model = getCharacter(part)
+    if not isValidTarget(model) then
+        return false
+    end
+
+    if not isInsideFov(part.Position) then
+        return false
+    end
+
+    if CONFIG.VISIBILITY_CHECK and not getVisibilityCached(model, part.Position) then
+        return false
+    end
+
+    return true
+end
+
+local function aimAt(part)
+    local cam = getCurrentCamera()
+    if not cam or not part then
+        return
+    end
+
+    local screenPoint, onScreen = cam:WorldToViewportPoint(part.Position)
+    if not onScreen then
+        return
+    end
+
+    local effectiveSmooth = math.clamp((CONFIG.SMOOTH ^ 0.55) * 1.9, 0.14, 2.2)
+    local center = cam.ViewportSize / 2
+    local delta = Vector2.new(screenPoint.X - center.X, screenPoint.Y - center.Y) * effectiveSmooth
+
+    local moveX = math.floor(delta.X + (delta.X >= 0 and 0.5 or -0.5))
+    local moveY = math.floor(delta.Y + (delta.Y >= 0 and 0.5 or -0.5))
+
+    if moveX == 0 and math.abs(delta.X) >= 0.35 then
+        moveX = delta.X > 0 and 1 or -1
+    end
+
+    if moveY == 0 and math.abs(delta.Y) >= 0.35 then
+        moveY = delta.Y > 0 and 1 or -1
+    end
+
+    if math.abs(moveX) < 1 and math.abs(moveY) < 1 then
+        return
+    end
+
+    if mousemoverel and not STATE.mouseMoveFailed then
+        local ok = pcall(mousemoverel, moveX, moveY)
+        if ok then
+            return
+        end
+
+        STATE.mouseMoveFailed = true
+    end
+
+    local targetLook = CFrame.lookAt(cam.CFrame.Position, part.Position)
+    cam.CFrame = cam.CFrame:Lerp(targetLook, math.clamp(effectiveSmooth * 0.85, 0.16, 1))
+end
+
+LocalMouse.Button2Down:Connect(function()
+    STATE.rightMouseDown = true
+end)
+
+LocalMouse.Button2Up:Connect(function()
+    STATE.rightMouseDown = false
+    STATE.lockedTarget = nil
+end)
+
+local function clearEspOnTargets()
+    for _, data in pairs(ESP_CACHE) do
+        if data.highlight then
+            data.highlight.Enabled = false
+        end
+        if data.billboard then
+            data.billboard.Enabled = false
+        end
+    end
+end
+
+local function cleanupEspObjects()
+    for model, data in pairs(ESP_CACHE) do
+        if data.highlight then
+            data.highlight:Destroy()
+        end
+        if data.billboard then
+            data.billboard:Destroy()
+        end
+        ESP_CACHE[model] = nil
+    end
+end
+
+local function ensureModelHighlight(model, data)
+    local highlight = model:FindFirstChild("HabibiHighlight")
+        or model:FindFirstChildOfClass("Highlight")
+
+    if highlight and highlight.Parent ~= model then
+        highlight = nil
+    end
+
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "HabibiHighlight"
+        highlight.Parent = model
+        highlight.Adornee = model
+    end
+
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency = 1
+    highlight.OutlineTransparency = 0
+    data.highlight = highlight
+    return highlight
+end
+
+local function ensureDistanceBillboard(rootPart, data)
+    local billboard = rootPart:FindFirstChild("DistanciaLabel")
+
+    if data.billboard and data.billboard.Parent ~= rootPart then
+        pcall(function()
+            data.billboard:Destroy()
+        end)
+        data.billboard = nil
+        billboard = nil
+    end
+
+    if not billboard or not billboard:IsA("BillboardGui") then
+        if billboard then
+            billboard:Destroy()
+        end
+
+        billboard = Instance.new("BillboardGui")
+        billboard.Name = "DistanciaLabel"
+        billboard.Parent = rootPart
+        billboard.Size = UDim2.new(0, 252, 0, 64)
+        billboard.MaxDistance = CONFIG.ESP_RENDER_DISTANCE
+        billboard.StudsOffset = Vector3.new(0, -5.25, 0)
+        billboard.AlwaysOnTop = true
+
+        local glow = Instance.new("Frame")
+        glow.Name = "Glow"
+        glow.Parent = billboard
+        glow.AnchorPoint = Vector2.new(0.5, 0.5)
+        glow.Position = UDim2.fromScale(0.5, 0.5)
+        glow.Size = UDim2.new(1, 26, 1, 22)
+        glow.BackgroundColor3 = ELECTRIC_PRIMARY
+        glow.BackgroundTransparency = 0.9
+        glow.BorderSizePixel = 0
+
+        local glowCorner = Instance.new("UICorner")
+        glowCorner.CornerRadius = UDim.new(0, 18)
+        glowCorner.Parent = glow
+
+        local glowGradient = Instance.new("UIGradient")
+        glowGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(0.4, ELECTRIC_PRIMARY_SOFT),
+            ColorSequenceKeypoint.new(1, ELECTRIC_PRIMARY),
+        })
+        glowGradient.Rotation = 25
+        glowGradient.Parent = glow
+
+        local card = Instance.new("Frame")
+        card.Name = "Card"
+        card.Parent = billboard
+        card.Size = UDim2.new(1, 0, 1, 0)
+        card.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+        card.BackgroundTransparency = 0.02
+        card.BorderSizePixel = 0
+
+        local cardCorner = Instance.new("UICorner")
+        cardCorner.CornerRadius = UDim.new(0, 16)
+        cardCorner.Parent = card
+
+        local cardStroke = Instance.new("UIStroke")
+        cardStroke.Name = "CardStroke"
+        cardStroke.Thickness = 1.45
+        cardStroke.Transparency = 0.06
+        cardStroke.Color = Color3.fromRGB(255, 255, 255)
+        cardStroke.Parent = card
+
+        local cardGradient = Instance.new("UIGradient")
+        cardGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 25, 36)),
+            ColorSequenceKeypoint.new(0.38, Color3.fromRGB(12, 12, 18)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 5, 9)),
+        })
+        cardGradient.Rotation = 90
+        cardGradient.Parent = card
+
+        local topEdge = Instance.new("Frame")
+        topEdge.Name = "TopEdge"
+        topEdge.Parent = card
+        topEdge.Size = UDim2.new(1, -20, 0, 2)
+        topEdge.Position = UDim2.new(0, 10, 0, 8)
+        topEdge.BackgroundColor3 = ESP_VISIBLE_COLOR
+        topEdge.BorderSizePixel = 0
+
+        local topEdgeGradient = Instance.new("UIGradient")
+        topEdgeGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.35),
+            NumberSequenceKeypoint.new(0.55, 0),
+            NumberSequenceKeypoint.new(1, 0.35),
+        })
+        topEdgeGradient.Parent = topEdge
+
+        local accent = Instance.new("Frame")
+        accent.Name = "Accent"
+        accent.Parent = card
+        accent.Size = UDim2.new(0, 4, 1, -18)
+        accent.Position = UDim2.new(0, 10, 0, 9)
+        accent.BackgroundColor3 = ESP_VISIBLE_COLOR
+        accent.BorderSizePixel = 0
+
+        local accentCorner = Instance.new("UICorner")
+        accentCorner.CornerRadius = UDim.new(1, 0)
+        accentCorner.Parent = accent
+
+        local slash = Instance.new("Frame")
+        slash.Name = "Slash"
+        slash.Parent = card
+        slash.AnchorPoint = Vector2.new(0.5, 0.5)
+        slash.Position = UDim2.new(1, -30, 0, 17)
+        slash.Size = UDim2.new(0, 58, 0, 3)
+        slash.Rotation = 12
+        slash.BackgroundColor3 = ESP_VISIBLE_COLOR
+        slash.BackgroundTransparency = 0.52
+        slash.BorderSizePixel = 0
+
+        local slashCorner = Instance.new("UICorner")
+        slashCorner.CornerRadius = UDim.new(1, 0)
+        slashCorner.Parent = slash
+
+        local distanceChip = Instance.new("Frame")
+        distanceChip.Name = "DistanceChip"
+        distanceChip.Parent = card
+        distanceChip.AnchorPoint = Vector2.new(1, 0)
+        distanceChip.Position = UDim2.new(1, -10, 0, 12)
+        distanceChip.Size = UDim2.new(0, 68, 0, 18)
+        distanceChip.BackgroundColor3 = Color3.fromRGB(30, 14, 52)
+        distanceChip.BorderSizePixel = 0
+
+        local distanceChipCorner = Instance.new("UICorner")
+        distanceChipCorner.CornerRadius = UDim.new(0, 999)
+        distanceChipCorner.Parent = distanceChip
+
+        local distanceChipStroke = Instance.new("UIStroke")
+        distanceChipStroke.Name = "DistanceChipStroke"
+        distanceChipStroke.Color = ESP_VISIBLE_COLOR
+        distanceChipStroke.Transparency = 0.2
+        distanceChipStroke.Thickness = 1
+        distanceChipStroke.Parent = distanceChip
+
+        local chipLabel = Instance.new("TextLabel")
+        chipLabel.Name = "ChipLabel"
+        chipLabel.Parent = distanceChip
+        chipLabel.Size = UDim2.fromScale(1, 1)
+        chipLabel.BackgroundTransparency = 1
+        chipLabel.Text = "RANGE"
+        chipLabel.TextColor3 = Color3.fromRGB(233, 228, 255)
+        chipLabel.TextSize = 9
+        chipLabel.Font = Enum.Font.GothamBlack
+
+        local contentPadding = Instance.new("UIPadding")
+        contentPadding.PaddingLeft = UDim.new(0, 22)
+        contentPadding.PaddingRight = UDim.new(0, 14)
+        contentPadding.PaddingTop = UDim.new(0, 14)
+        contentPadding.PaddingBottom = UDim.new(0, 10)
+        contentPadding.Parent = card
+
+        local holder = Instance.new("Frame")
+        holder.Name = "Holder"
+        holder.Parent = card
+        holder.Size = UDim2.new(1, 0, 1, 0)
+        holder.BackgroundTransparency = 1
+
+        local list = Instance.new("UIListLayout")
+        list.Padding = UDim.new(0, 5)
+        list.FillDirection = Enum.FillDirection.Vertical
+        list.VerticalAlignment = Enum.VerticalAlignment.Center
+        list.Parent = holder
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Name = "NameLabel"
+        nameLabel.Parent = holder
+        nameLabel.Size = UDim2.new(1, -64, 0, 20)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = ""
+        nameLabel.TextColor3 = Color3.fromRGB(248, 248, 252)
+        nameLabel.TextSize = 14
+        nameLabel.TextWrapped = false
+        nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.Font = Enum.Font.GothamBold
+
+        local nameStroke = Instance.new("UIStroke")
+        nameStroke.Color = Color3.fromRGB(255, 255, 255)
+        nameStroke.Transparency = 0.78
+        nameStroke.Thickness = 1
+        nameStroke.Parent = nameLabel
+
+        local distanceLabel = Instance.new("TextLabel")
+        distanceLabel.Name = "DistanceLabel"
+        distanceLabel.Parent = holder
+        distanceLabel.Size = UDim2.new(1, 0, 0, 15)
+        distanceLabel.BackgroundTransparency = 1
+        distanceLabel.Text = ""
+        distanceLabel.TextColor3 = Color3.fromRGB(218, 214, 234)
+        distanceLabel.TextSize = 11
+        distanceLabel.TextXAlignment = Enum.TextXAlignment.Left
+        distanceLabel.Font = Enum.Font.GothamBold
+    end
+
+    data.billboard = billboard
+    return billboard
+end
+
+local function saveSettings()
+    if not writefile then
+        return false, "Executor sin writefile"
+    end
+
+    local payload = {
+        AIMBOT_ACTIVO = CONFIG.AIMBOT_ACTIVO,
+        ESP_ACTIVO = CONFIG.ESP_ACTIVO,
+        ESP_NAME = CONFIG.ESP_NAME,
+        ESP_DISTANCE = CONFIG.ESP_DISTANCE,
+        ESP_HIGHLIGHT = CONFIG.ESP_HIGHLIGHT,
+        ESP_TOGGLE_KEY = CONFIG.ESP_TOGGLE_KEY.Name,
+        SHOW_FOV = CONFIG.SHOW_FOV,
+        TEAM_CHECK = CONFIG.TEAM_CHECK,
+        VISIBILITY_CHECK = CONFIG.VISIBILITY_CHECK,
+        WORLD_TIME_ENABLED = CONFIG.WORLD_TIME_ENABLED,
+        ANTI_RECOIL = CONFIG.ANTI_RECOIL,
+        ANTI_RECOIL_STRENGTH = CONFIG.ANTI_RECOIL_STRENGTH,
+        TARGET_PART = CONFIG.TARGET_PART,
+        WORLD_TIME = CONFIG.WORLD_TIME,
+        FOV = CONFIG.FOV,
+        SMOOTH = CONFIG.SMOOTH,
+        ESP_RENDER_DISTANCE = CONFIG.ESP_RENDER_DISTANCE,
+        ENEMY_COLOR_R = CONFIG.ENEMY_COLOR_R,
+        ENEMY_COLOR_G = CONFIG.ENEMY_COLOR_G,
+        ENEMY_COLOR_B = CONFIG.ENEMY_COLOR_B,
+        TOGGLE_MENU_KEY = CONFIG.TOGGLE_MENU_KEY.Name,
+    }
+
+    local ok, result = pcall(function()
+        writefile(SETTINGS_FILE, HttpService:JSONEncode(payload))
+    end)
+
+    if not ok then
+        return false, tostring(result)
+    end
+
+    return true, "Settings guardadas"
+end
+
+local function loadSettings()
+    if not readfile or not isfile or not isfile(SETTINGS_FILE) then
+        return false, "No existe archivo de settings"
+    end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(SETTINGS_FILE))
+    end)
+
+    if not ok or type(data) ~= "table" then
+        return false, "Archivo de settings invalido"
+    end
+
+    for key, value in pairs(data) do
+        if CONFIG[key] ~= nil then
+            CONFIG[key] = value
+        end
+    end
+
+    if type(CONFIG.TOGGLE_MENU_KEY) == "string" then
+        CONFIG.TOGGLE_MENU_KEY = Enum.KeyCode[CONFIG.TOGGLE_MENU_KEY] or DEFAULT_CONFIG.TOGGLE_MENU_KEY
+    end
+
+    if type(CONFIG.ESP_TOGGLE_KEY) == "string" then
+        CONFIG.ESP_TOGGLE_KEY = Enum.KeyCode[CONFIG.ESP_TOGGLE_KEY] or DEFAULT_CONFIG.ESP_TOGGLE_KEY
+    end
+
+    return true, "Settings cargadas"
+end
+
+local function resetSettings()
+    for key, value in pairs(DEFAULT_CONFIG) do
+        CONFIG[key] = value
+    end
+end
+
+do
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HabibiScriptsGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 999999
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local espWorldFolder = Instance.new("Folder")
+espWorldFolder.Name = "HabibiEspWorld"
+espWorldFolder.Parent = workspace
+
+local espGuiFolder = Instance.new("Folder")
+espGuiFolder.Name = "HabibiEspGui"
+espGuiFolder.Parent = screenGui
+
+local dim = Instance.new("Frame")
+dim.Size = UDim2.fromScale(1, 1)
+dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+dim.BackgroundTransparency = 0.2
+dim.BorderSizePixel = 0
+dim.Parent = screenGui
+
+local loginAura = Instance.new("Frame")
+loginAura.Size = UDim2.new(0, 664, 0, 470)
+loginAura.Position = UDim2.new(0.5, -332, 0.5, -235)
+loginAura.BackgroundColor3 = ELECTRIC_PRIMARY
+loginAura.BackgroundTransparency = 0.94
+loginAura.BorderSizePixel = 0
+loginAura.ZIndex = 0
+loginAura.Parent = screenGui
+
+local loginAuraCorner = Instance.new("UICorner")
+loginAuraCorner.CornerRadius = UDim.new(0, 32)
+loginAuraCorner.Parent = loginAura
+
+local loginAuraGradient = Instance.new("UIGradient")
+loginAuraGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(228, 214, 255)),
+    ColorSequenceKeypoint.new(0.45, ELECTRIC_PRIMARY_SOFT),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(56, 16, 122)),
+})
+loginAuraGradient.Rotation = 22
+loginAuraGradient.Parent = loginAura
+
+local loginFrame = Instance.new("Frame")
+loginFrame.Size = UDim2.new(0, 580, 0, 388)
+loginFrame.Position = UDim2.new(0.5, -290, 0.5, -194)
+loginFrame.BackgroundColor3 = ELECTRIC_SURFACE
+loginFrame.BorderSizePixel = 0
+loginFrame.Parent = screenGui
+
+local loginScale = Instance.new("UIScale")
+loginScale.Scale = PANEL_CLOSED_SCALE
+loginScale.Parent = loginFrame
+
+local loginCorner = Instance.new("UICorner")
+loginCorner.CornerRadius = UDim.new(0, 24)
+loginCorner.Parent = loginFrame
+
+local loginStroke = Instance.new("UIStroke")
+loginStroke.Color = ELECTRIC_PRIMARY
+loginStroke.Thickness = 1.6
+loginStroke.Transparency = 0.08
+loginStroke.Parent = loginFrame
+
+local loginGradient = Instance.new("UIGradient")
+loginGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 25, 35)),
+    ColorSequenceKeypoint.new(0.42, Color3.fromRGB(13, 13, 20)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 6, 10)),
+})
+loginGradient.Rotation = 90
+loginGradient.Parent = loginFrame
+
+local loginAccent = Instance.new("Frame")
+loginAccent.Size = UDim2.new(1, -56, 0, 3)
+loginAccent.Position = UDim2.new(0, 28, 0, 20)
+loginAccent.BackgroundColor3 = ELECTRIC_PRIMARY
+loginAccent.BorderSizePixel = 0
+loginAccent.Parent = loginFrame
+
+local loginAccentTransparency = Instance.new("UIGradient")
+loginAccentTransparency.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.25),
+    NumberSequenceKeypoint.new(0.5, 0),
+    NumberSequenceKeypoint.new(1, 0.25),
+})
+loginAccentTransparency.Parent = loginAccent
+
+local loginDragHandle = Instance.new("Frame")
+loginDragHandle.Size = UDim2.new(1, -40, 0, 40)
+loginDragHandle.Position = UDim2.new(0, 20, 0, 6)
+loginDragHandle.BackgroundTransparency = 1
+loginDragHandle.BorderSizePixel = 0
+loginDragHandle.Active = true
+loginDragHandle.Parent = loginFrame
+
+local loginTitle = Instance.new("TextLabel")
+loginTitle.Size = UDim2.new(1, -88, 0, 50)
+loginTitle.Position = UDim2.new(0, 44, 0, 58)
+loginTitle.BackgroundTransparency = 1
+loginTitle.Text = "HABIBISCRIPTS"
+loginTitle.TextColor3 = ELECTRIC_TEXT
+loginTitle.TextSize = 33
+loginTitle.Font = Enum.Font.GothamBlack
+loginTitle.TextXAlignment = Enum.TextXAlignment.Center
+loginTitle.Parent = loginFrame
+
+local loginTitleStroke = Instance.new("UIStroke")
+loginTitleStroke.Color = ELECTRIC_PRIMARY
+loginTitleStroke.Thickness = 2.4
+loginTitleStroke.Transparency = 0.08
+loginTitleStroke.Parent = loginTitle
+
+local loginSub = Instance.new("TextLabel")
+loginSub.Size = UDim2.new(1, -60, 0, 20)
+loginSub.Position = UDim2.new(0, 30, 0, 112)
+loginSub.BackgroundTransparency = 1
+loginSub.Text = "Secure electric access"
+loginSub.TextColor3 = Color3.fromRGB(196, 188, 226)
+loginSub.TextSize = 13
+loginSub.Font = Enum.Font.GothamMedium
+loginSub.TextXAlignment = Enum.TextXAlignment.Center
+loginSub.Parent = loginFrame
+
+local loginBolt = Instance.new("TextLabel")
+loginBolt.Size = UDim2.new(0, 160, 0, 18)
+loginBolt.Position = UDim2.new(0.5, -80, 0, 144)
+loginBolt.BackgroundTransparency = 1
+loginBolt.Text = "ACCESS CORE"
+loginBolt.TextColor3 = ELECTRIC_PRIMARY_SOFT
+loginBolt.TextSize = 11
+loginBolt.Font = Enum.Font.GothamBold
+loginBolt.Parent = loginFrame
+
+local loginBoltStroke = Instance.new("UIStroke")
+loginBoltStroke.Color = ELECTRIC_PRIMARY
+loginBoltStroke.Thickness = 1.2
+loginBoltStroke.Transparency = 0.2
+loginBoltStroke.Parent = loginBolt
+
+local userBox = Instance.new("TextBox")
+userBox.Size = UDim2.new(1, -72, 0, 54)
+userBox.Position = UDim2.new(0, 36, 0, 182)
+userBox.BackgroundColor3 = Color3.fromRGB(16, 17, 24)
+userBox.TextColor3 = ELECTRIC_TEXT
+userBox.PlaceholderText = "Enter access user"
+userBox.PlaceholderColor3 = Color3.fromRGB(124, 116, 156)
+userBox.ClearTextOnFocus = false
+userBox.Text = ""
+userBox.TextSize = 17
+userBox.Font = Enum.Font.GothamBold
+userBox.TextXAlignment = Enum.TextXAlignment.Center
+userBox.BorderSizePixel = 0
+userBox.Parent = loginFrame
+
+local userBoxCorner = Instance.new("UICorner")
+userBoxCorner.CornerRadius = UDim.new(0, 16)
+userBoxCorner.Parent = userBox
+
+local userBoxStroke = Instance.new("UIStroke")
+userBoxStroke.Color = ELECTRIC_PRIMARY
+userBoxStroke.Thickness = 1.4
+userBoxStroke.Transparency = 0.18
+userBoxStroke.Parent = userBox
+
+local userBoxGradient = Instance.new("UIGradient")
+userBoxGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 29, 38)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 12, 18)),
+})
+userBoxGradient.Rotation = 90
+userBoxGradient.Parent = userBox
+
+local loginButton = Instance.new("TextButton")
+loginButton.Size = UDim2.new(1, -72, 0, 54)
+loginButton.Position = UDim2.new(0, 36, 0, 252)
+loginButton.BackgroundColor3 = ELECTRIC_PRIMARY
+loginButton.TextColor3 = ELECTRIC_TEXT
+loginButton.Text = "INICIAR"
+loginButton.TextSize = 19
+loginButton.Font = Enum.Font.GothamBlack
+loginButton.BorderSizePixel = 0
+loginButton.Parent = loginFrame
+
+local loginButtonCorner = Instance.new("UICorner")
+loginButtonCorner.CornerRadius = UDim.new(0, 16)
+loginButtonCorner.Parent = loginButton
+
+local loginButtonStroke = Instance.new("UIStroke")
+loginButtonStroke.Color = Color3.fromRGB(255, 245, 255)
+loginButtonStroke.Thickness = 1.3
+loginButtonStroke.Transparency = 0.16
+loginButtonStroke.Parent = loginButton
+
+local loginButtonGradient = Instance.new("UIGradient")
+loginButtonGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(155, 84, 255)),
+    ColorSequenceKeypoint.new(0.5, ELECTRIC_PRIMARY),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(67, 22, 174)),
+})
+loginButtonGradient.Rotation = 0
+loginButtonGradient.Parent = loginButton
+
+local loginStatus = Instance.new("TextLabel")
+loginStatus.Size = UDim2.new(1, -60, 0, 18)
+loginStatus.Position = UDim2.new(0, 30, 1, -32)
+loginStatus.BackgroundTransparency = 1
+loginStatus.Text = ""
+loginStatus.TextColor3 = ELECTRIC_PRIMARY_SOFT
+loginStatus.TextSize = 12
+loginStatus.Font = Enum.Font.GothamMedium
+loginStatus.TextXAlignment = Enum.TextXAlignment.Center
+loginStatus.Parent = loginFrame
+
+local loginHint = Instance.new("TextLabel")
+loginHint.Size = UDim2.new(1, -60, 0, 16)
+loginHint.Position = UDim2.new(0, 30, 1, -54)
+loginHint.BackgroundTransparency = 1
+loginHint.Text = "Drag to move the panel"
+loginHint.TextColor3 = ELECTRIC_DIM
+loginHint.TextSize = 11
+loginHint.Font = Enum.Font.GothamMedium
+loginHint.TextXAlignment = Enum.TextXAlignment.Center
+loginHint.Parent = loginFrame
+
+local loginDragPill = Instance.new("Frame")
+loginDragPill.Size = UDim2.new(0, 104, 0, 5)
+loginDragPill.Position = UDim2.new(0.5, -52, 0, 12)
+loginDragPill.BackgroundColor3 = ELECTRIC_PRIMARY
+loginDragPill.BackgroundTransparency = 0.16
+loginDragPill.BorderSizePixel = 0
+loginDragPill.Parent = loginFrame
+
+local loginDragPillCorner = Instance.new("UICorner")
+loginDragPillCorner.CornerRadius = UDim.new(1, 0)
+loginDragPillCorner.Parent = loginDragPill
+
+local panelAura = Instance.new("Frame")
+panelAura.Size = UDim2.new(0, 972, 0, 634)
+panelAura.Position = UDim2.new(0.5, -486, 0.5, -317)
+panelAura.BackgroundColor3 = ELECTRIC_PRIMARY
+panelAura.BackgroundTransparency = 0.93
+panelAura.BorderSizePixel = 0
+panelAura.Visible = false
+panelAura.ZIndex = 0
+panelAura.Parent = screenGui
+
+local panelAuraCorner = Instance.new("UICorner")
+panelAuraCorner.CornerRadius = UDim.new(0, 34)
+panelAuraCorner.Parent = panelAura
+
+local panelAuraGradient = Instance.new("UIGradient")
+panelAuraGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, ELECTRIC_PRIMARY_SOFT),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(52, 18, 116)),
+})
+panelAuraGradient.Rotation = 28
+panelAuraGradient.Parent = panelAura
+
+local panel = Instance.new("Frame")
+panel.Size = UDim2.new(0, 900, 0, 560)
+panel.Position = UDim2.new(0.5, -450, 0.5, -280)
+panel.BackgroundColor3 = ELECTRIC_SURFACE
+panel.BorderSizePixel = 0
+panel.Visible = false
+panel.Parent = screenGui
+
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 18)
+panelCorner.Parent = panel
+
+local panelGradient = Instance.new("UIGradient")
+panelGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 31, 42)),
+    ColorSequenceKeypoint.new(0.45, Color3.fromRGB(18, 19, 26)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 15)),
+})
+panelGradient.Rotation = 90
+panelGradient.Parent = panel
+
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = ELECTRIC_PRIMARY
+panelStroke.Thickness = 1.8
+panelStroke.Transparency = 0.08
+panelStroke.Parent = panel
+
+local panelScale = Instance.new("UIScale")
+panelScale.Scale = PANEL_CLOSED_SCALE
+panelScale.Parent = panel
+
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, -14, 0, 58)
+topBar.Position = UDim2.new(0, 7, 0, 7)
+topBar.BackgroundColor3 = ELECTRIC_PANEL_ALT
+topBar.BorderSizePixel = 0
+topBar.Active = true
+topBar.Parent = panel
+
+local topBarCorner = Instance.new("UICorner")
+topBarCorner.CornerRadius = UDim.new(0, 14)
+topBarCorner.Parent = topBar
+
+local topBarStroke = Instance.new("UIStroke")
+topBarStroke.Color = ELECTRIC_PRIMARY
+topBarStroke.Transparency = 0.12
+topBarStroke.Parent = topBar
+
+local topBarGradient = Instance.new("UIGradient")
+topBarGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(63, 49, 98)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 25, 34)),
+})
+topBarGradient.Rotation = 0
+topBarGradient.Parent = topBar
+
+local windowTitle = Instance.new("TextLabel")
+windowTitle.Size = UDim2.new(0, 320, 0, 28)
+windowTitle.Position = UDim2.new(0, 18, 0, 8)
+windowTitle.BackgroundTransparency = 1
+windowTitle.Text = "HABIBISCRIPTS"
+windowTitle.TextColor3 = ELECTRIC_TEXT
+windowTitle.TextSize = 29
+windowTitle.Font = Enum.Font.GothamBlack
+windowTitle.TextXAlignment = Enum.TextXAlignment.Left
+windowTitle.Parent = topBar
+
+local windowSubtitle = Instance.new("TextLabel")
+windowSubtitle.Size = UDim2.new(0, 260, 0, 16)
+windowSubtitle.Position = UDim2.new(0, 20, 0, 35)
+windowSubtitle.BackgroundTransparency = 1
+windowSubtitle.Text = "Electric control suite"
+windowSubtitle.TextColor3 = ELECTRIC_MUTED
+windowSubtitle.TextSize = 11
+windowSubtitle.Font = Enum.Font.GothamMedium
+windowSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+windowSubtitle.Parent = topBar
+
+local titleBolt = Instance.new("TextLabel")
+titleBolt.Size = UDim2.new(0, 34, 0, 34)
+titleBolt.Position = UDim2.new(0, 326, 0, 11)
+titleBolt.BackgroundTransparency = 1
+titleBolt.Text = "//"
+titleBolt.TextColor3 = ELECTRIC_TEXT
+titleBolt.TextSize = 18
+titleBolt.Font = Enum.Font.SourceSansBold
+titleBolt.Parent = topBar
+
+local titleBoltStroke = Instance.new("UIStroke")
+titleBoltStroke.Color = ELECTRIC_PRIMARY
+titleBoltStroke.Thickness = 1.8
+titleBoltStroke.Transparency = 0.08
+titleBoltStroke.Parent = titleBolt
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 34, 0, 34)
+closeButton.Position = UDim2.new(1, -44, 0.5, -17)
+closeButton.BackgroundColor3 = Color3.fromRGB(71, 38, 118)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.TextSize = 15
+closeButton.Font = Enum.Font.GothamBlack
+closeButton.BorderSizePixel = 0
+closeButton.Parent = topBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(1, 0)
+closeCorner.Parent = closeButton
+
+local closeStroke = Instance.new("UIStroke")
+closeStroke.Color = ELECTRIC_PRIMARY_SOFT
+closeStroke.Transparency = 0.08
+closeStroke.Parent = closeButton
+
+local dragPill = Instance.new("Frame")
+dragPill.Size = UDim2.new(0, 74, 0, 5)
+dragPill.Position = UDim2.new(0.5, -37, 0, 10)
+dragPill.BackgroundColor3 = ELECTRIC_PRIMARY
+dragPill.BackgroundTransparency = 0.08
+dragPill.BorderSizePixel = 0
+dragPill.Parent = topBar
+
+local dragPillCorner = Instance.new("UICorner")
+dragPillCorner.CornerRadius = UDim.new(1, 0)
+dragPillCorner.Parent = dragPill
+
+local topBarHint = Instance.new("TextLabel")
+topBarHint.Size = UDim2.new(0, 128, 0, 16)
+topBarHint.Position = UDim2.new(1, -178, 0, 11)
+topBarHint.BackgroundTransparency = 1
+topBarHint.Text = "Drag menu"
+topBarHint.TextColor3 = ELECTRIC_MUTED
+topBarHint.TextSize = 11
+topBarHint.Font = Enum.Font.GothamMedium
+topBarHint.TextXAlignment = Enum.TextXAlignment.Right
+topBarHint.Parent = topBar
+
+local keyChip = Instance.new("Frame")
+keyChip.Size = UDim2.new(0, 60, 0, 22)
+keyChip.Position = UDim2.new(1, -112, 0, 28)
+keyChip.BackgroundColor3 = Color3.fromRGB(36, 22, 60)
+keyChip.BorderSizePixel = 0
+keyChip.Parent = topBar
+
+local keyChipCorner = Instance.new("UICorner")
+keyChipCorner.CornerRadius = UDim.new(0, 999)
+keyChipCorner.Parent = keyChip
+
+local keyChipStroke = Instance.new("UIStroke")
+keyChipStroke.Color = ELECTRIC_PRIMARY
+keyChipStroke.Transparency = 0.12
+keyChipStroke.Parent = keyChip
+
+local keyChipText = Instance.new("TextLabel")
+keyChipText.Size = UDim2.fromScale(1, 1)
+keyChipText.BackgroundTransparency = 1
+keyChipText.Text = CONFIG.TOGGLE_MENU_KEY.Name
+keyChipText.TextColor3 = ELECTRIC_TEXT
+keyChipText.TextSize = 11
+keyChipText.Font = Enum.Font.GothamBold
+keyChipText.Parent = keyChip
+
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 184, 1, -80)
+sidebar.Position = UDim2.new(0, 10, 0, 72)
+sidebar.BackgroundColor3 = ELECTRIC_PANEL
+sidebar.BorderSizePixel = 0
+sidebar.Parent = panel
+
+local sidebarCorner = Instance.new("UICorner")
+sidebarCorner.CornerRadius = UDim.new(0, 16)
+sidebarCorner.Parent = sidebar
+
+local sidebarGradient = Instance.new("UIGradient")
+sidebarGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 45, 58)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 21, 30)),
+})
+sidebarGradient.Rotation = 90
+sidebarGradient.Parent = sidebar
+
+local sidebarStroke = Instance.new("UIStroke")
+sidebarStroke.Color = ELECTRIC_PRIMARY
+sidebarStroke.Transparency = 0.18
+sidebarStroke.Parent = sidebar
+
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.Padding = UDim.new(0, 10)
+sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+sidebarLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+sidebarLayout.Parent = sidebar
+
+local sidebarPadding = Instance.new("UIPadding")
+sidebarPadding.PaddingTop = UDim.new(0, 12)
+sidebarPadding.PaddingBottom = UDim.new(0, 10)
+sidebarPadding.Parent = sidebar
+
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, -216, 1, -92)
+content.Position = UDim2.new(0, 206, 0, 72)
+content.BackgroundColor3 = ELECTRIC_PANEL
+content.BorderSizePixel = 0
+content.Parent = panel
+
+local contentCorner = Instance.new("UICorner")
+contentCorner.CornerRadius = UDim.new(0, 16)
+contentCorner.Parent = content
+
+local contentGradient = Instance.new("UIGradient")
+contentGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(46, 47, 60)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 19, 28)),
+})
+contentGradient.Rotation = 90
+contentGradient.Parent = content
+
+local contentStroke = Instance.new("UIStroke")
+contentStroke.Color = ELECTRIC_PRIMARY
+contentStroke.Transparency = 0.14
+contentStroke.Parent = content
+
+local contentAccent = Instance.new("Frame")
+contentAccent.Size = UDim2.new(1, -28, 0, 2)
+contentAccent.Position = UDim2.new(0, 14, 0, 12)
+contentAccent.BackgroundColor3 = ELECTRIC_PRIMARY
+contentAccent.BorderSizePixel = 0
+contentAccent.Parent = content
+
+local contentAccentCorner = Instance.new("UICorner")
+contentAccentCorner.CornerRadius = UDim.new(1, 0)
+contentAccentCorner.Parent = contentAccent
+
+local contentAccentGradient = Instance.new("UIGradient")
+contentAccentGradient.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.3),
+    NumberSequenceKeypoint.new(0.5, 0),
+    NumberSequenceKeypoint.new(1, 0.3),
+})
+contentAccentGradient.Parent = contentAccent
+
+UI.screenGui = screenGui
+UI.espWorldFolder = espWorldFolder
+UI.espGuiFolder = espGuiFolder
+UI.dim = dim
+UI.loginAura = loginAura
+UI.loginFrame = loginFrame
+UI.loginScale = loginScale
+UI.panelAura = panelAura
+UI.panel = panel
+UI.panelScale = panelScale
+UI.topBar = topBar
+UI.keyChipText = keyChipText
+UI.sidebar = sidebar
+UI.content = content
+
+local function createNavButton(tabName, label, badgeText)
+    local button = Instance.new("TextButton")
+    button.Name = tabName .. "Tab"
+    button.Size = UDim2.new(1, -20, 0, 52)
+    button.BackgroundColor3 = Color3.fromRGB(33, 34, 46)
+    button.Text = ""
+    button.AutoButtonColor = false
+    button.BorderSizePixel = 0
+    button.Parent = UI.sidebar
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = button
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 12)
+    padding.Parent = button
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Name = "Stroke"
+    stroke.Color = ELECTRIC_PRIMARY
+    stroke.Transparency = 0.68
+    stroke.Parent = button
+
+    local buttonGradient = Instance.new("UIGradient")
+    buttonGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(50, 51, 64)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 34)),
+    })
+    buttonGradient.Rotation = 0
+    buttonGradient.Parent = button
+
+    local activeBar = Instance.new("Frame")
+    activeBar.Name = "ActiveBar"
+    activeBar.Size = UDim2.new(0, 0, 1, -14)
+    activeBar.Position = UDim2.new(0, 5, 0, 7)
+    activeBar.BackgroundColor3 = ELECTRIC_PRIMARY
+    activeBar.BackgroundTransparency = 0
+    activeBar.BorderSizePixel = 0
+    activeBar.Parent = button
+
+    local activeBarCorner = Instance.new("UICorner")
+    activeBarCorner.CornerRadius = UDim.new(1, 0)
+    activeBarCorner.Parent = activeBar
+
+    local glow = Instance.new("Frame")
+    glow.Name = "Glow"
+    glow.Size = UDim2.new(1, 0, 1, 0)
+    glow.BackgroundColor3 = ELECTRIC_PRIMARY
+    glow.BackgroundTransparency = 1
+    glow.BorderSizePixel = 0
+    glow.ZIndex = 0
+    glow.Parent = button
+
+    local glowCorner = Instance.new("UICorner")
+    glowCorner.CornerRadius = UDim.new(0, 10)
+    glowCorner.Parent = glow
+
+    local badge = Instance.new("Frame")
+    badge.Name = "Badge"
+    badge.Size = UDim2.new(0, 26, 0, 26)
+    badge.Position = UDim2.new(0, 12, 0.5, -13)
+    badge.BackgroundColor3 = Color3.fromRGB(56, 29, 102)
+    badge.BorderSizePixel = 0
+    badge.Parent = button
+
+    local badgeCorner = Instance.new("UICorner")
+    badgeCorner.CornerRadius = UDim.new(0, 8)
+    badgeCorner.Parent = badge
+
+    local badgeGradient = Instance.new("UIGradient")
+    badgeGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, ELECTRIC_PRIMARY_SOFT),
+        ColorSequenceKeypoint.new(1, ELECTRIC_SECONDARY),
+    })
+    badgeGradient.Rotation = 90
+    badgeGradient.Parent = badge
+
+    local badgeTextLabel = Instance.new("TextLabel")
+    badgeTextLabel.Size = UDim2.fromScale(1, 1)
+    badgeTextLabel.BackgroundTransparency = 1
+    badgeTextLabel.Text = badgeText
+    badgeTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    badgeTextLabel.TextSize = 12
+    badgeTextLabel.Font = Enum.Font.GothamBlack
+    badgeTextLabel.Parent = badge
+
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -52, 1, 0)
+    title.Position = UDim2.new(0, 46, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = label
+    title.TextColor3 = ELECTRIC_MUTED
+    title.TextSize = 14
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = button
+
+    UI_STATE.navButtons[tabName] = {
+        button = button,
+        stroke = stroke,
+        badge = badge,
+        title = title,
+        activeBar = activeBar,
+        glow = glow,
+    }
+    return button
+end
+
+local function createPage(tabName)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = tabName .. "Page"
+    page.Size = UDim2.fromScale(1, 1)
+    page.BackgroundColor3 = Color3.fromRGB(58, 60, 68)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = Color3.fromRGB(131, 82, 212)
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.Visible = false
+    page.Parent = UI.content
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 14)
+    corner.Parent = page
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 16)
+    padding.PaddingRight = UDim.new(0, 16)
+    padding.PaddingTop = UDim.new(0, 14)
+    padding.PaddingBottom = UDim.new(0, 14)
+    padding.Parent = page
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 12)
+    layout.Parent = page
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
+    end)
+
+    UI_STATE.pages[tabName] = page
+    return page
+end
+
+local function createSection(parent, titleText)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, 0, 0, 0)
+    section.AutomaticSize = Enum.AutomaticSize.Y
+    section.BackgroundColor3 = ELECTRIC_PANEL_ALT
+    section.BorderSizePixel = 0
+    section.Parent = parent
+
+    local sectionCorner = Instance.new("UICorner")
+    sectionCorner.CornerRadius = UDim.new(0, 12)
+    sectionCorner.Parent = section
+
+    local sectionGradient = Instance.new("UIGradient")
+    sectionGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(54, 56, 70)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 25, 34)),
+    })
+    sectionGradient.Rotation = 90
+    sectionGradient.Parent = section
+
+    local sectionStroke = Instance.new("UIStroke")
+    sectionStroke.Color = ELECTRIC_PRIMARY
+    sectionStroke.Transparency = 0.18
+    sectionStroke.Parent = section
+
+    local sectionPadding = Instance.new("UIPadding")
+    sectionPadding.PaddingLeft = UDim.new(0, 14)
+    sectionPadding.PaddingRight = UDim.new(0, 14)
+    sectionPadding.PaddingTop = UDim.new(0, 12)
+    sectionPadding.PaddingBottom = UDim.new(0, 12)
+    sectionPadding.Parent = section
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -18, 0, 22)
+    title.Position = UDim2.new(0, 18, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = ELECTRIC_TEXT
+    title.TextSize = 13
+    title.Font = Enum.Font.GothamBlack
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = section
+
+    local titleAccent = Instance.new("Frame")
+    titleAccent.Size = UDim2.new(0, 3, 0, 16)
+    titleAccent.Position = UDim2.new(0, 0, 0, 3)
+    titleAccent.BackgroundColor3 = ELECTRIC_PRIMARY
+    titleAccent.BorderSizePixel = 0
+    titleAccent.Parent = section
+
+    local titleAccentCorner = Instance.new("UICorner")
+    titleAccentCorner.CornerRadius = UDim.new(1, 0)
+    titleAccentCorner.Parent = titleAccent
+
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(1, 0, 0, 1)
+    divider.Position = UDim2.new(0, 0, 0, 28)
+    divider.BackgroundColor3 = Color3.fromRGB(89, 51, 156)
+    divider.BorderSizePixel = 0
+    divider.Parent = section
+
+    local body = Instance.new("Frame")
+    body.Size = UDim2.new(1, 0, 0, 0)
+    body.Position = UDim2.new(0, 0, 0, 40)
+    body.AutomaticSize = Enum.AutomaticSize.Y
+    body.BackgroundTransparency = 1
+    body.Parent = section
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 10)
+    layout.Parent = body
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingBottom = UDim.new(0, 2)
+    padding.Parent = body
+
+    return body
+end
+
+local function createRow(parent, height)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, height or 48)
+    row.BackgroundTransparency = 1
+    row.Parent = parent
+    return row
+end
+
+local function createToggle(parent, id, titleText, subtitleText, callback)
+    local row = createRow(parent, 54)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -110, 0, 22)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = ELECTRIC_TEXT
+    title.TextSize = 13
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = row
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Size = UDim2.new(1, -110, 0, 18)
+    subtitle.Position = UDim2.new(0, 0, 0, 24)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = subtitleText or ""
+    subtitle.TextColor3 = ELECTRIC_DIM
+    subtitle.TextSize = 11
+    subtitle.Font = Enum.Font.GothamMedium
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.Parent = row
+
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0, 62, 0, 26)
+    toggle.Position = UDim2.new(1, -62, 0.5, -13)
+    toggle.BackgroundColor3 = Color3.fromRGB(48, 48, 58)
+    toggle.Text = ""
+    toggle.AutoButtonColor = false
+    toggle.BorderSizePixel = 0
+    toggle.Parent = row
+
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(1, 0)
+    toggleCorner.Parent = toggle
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 22, 0, 22)
+    knob.Position = UDim2.new(0, 2, 0.5, -11)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BorderSizePixel = 0
+    knob.Parent = toggle
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+
+    local stateLabel = Instance.new("TextLabel")
+    stateLabel.Name = "StateLabel"
+    stateLabel.Size = UDim2.new(1, -28, 1, 0)
+    stateLabel.Position = UDim2.new(0, 24, 0, 0)
+    stateLabel.BackgroundTransparency = 1
+    stateLabel.Text = "OFF"
+    stateLabel.TextColor3 = ELECTRIC_MUTED
+    stateLabel.TextSize = 10
+    stateLabel.Font = Enum.Font.GothamBlack
+    stateLabel.TextXAlignment = Enum.TextXAlignment.Center
+    stateLabel.Parent = toggle
+
+    UI_STATE.toggles[id] = {
+        button = toggle,
+        knob = knob,
+        stateLabel = stateLabel,
+    }
+
+    toggle.MouseButton1Click:Connect(function()
+        callback(not CONFIG[id])
+        refreshUi()
+    end)
+end
+
+local function createSlider(parent, id, titleText, minValue, maxValue, formatter, setter)
+    local row = createRow(parent, 56)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -70, 0, 18)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = ELECTRIC_TEXT
+    title.TextSize = 13
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = row
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0, 60, 0, 18)
+    valueLabel.Position = UDim2.new(1, -60, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = ""
+    valueLabel.TextColor3 = ELECTRIC_MUTED
+    valueLabel.TextSize = 12
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = row
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1, 0, 0, 6)
+    bar.Position = UDim2.new(0, 0, 0, 34)
+    bar.BackgroundColor3 = Color3.fromRGB(44, 44, 54)
+    bar.BorderSizePixel = 0
+    bar.Parent = row
+
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(1, 0)
+    barCorner.Parent = bar
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = ELECTRIC_PRIMARY
+    fill.BorderSizePixel = 0
+    fill.Parent = bar
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = fill
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.Position = UDim2.new(0, 0, 0.5, 0)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BorderSizePixel = 0
+    knob.Parent = bar
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+
+    UI_STATE.sliders[id] = {
+        bar = bar,
+        fill = fill,
+        knob = knob,
+        min = minValue,
+        max = maxValue,
+        formatter = formatter,
+        setter = setter,
+        label = valueLabel,
+    }
+
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            STATE.activeSlider = id
+            setter((input.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X)
+        end
+    end)
+end
+
+local function createChoiceRow(parent, id, titleText, choices, callback)
+    local row = createRow(parent, 84)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 18)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = ELECTRIC_TEXT
+    title.TextSize = 13
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = row
+
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1, 0, 0, 44)
+    holder.Position = UDim2.new(0, 0, 0, 30)
+    holder.BackgroundTransparency = 1
+    holder.Parent = row
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = holder
+
+    UI_STATE.choiceRows[id] = {}
+
+    for _, choice in ipairs(choices) do
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(0, 120, 1, 0)
+        button.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+        button.Text = choice
+        button.TextColor3 = ELECTRIC_TEXT
+        button.TextSize = 12
+        button.Font = Enum.Font.GothamBold
+        button.AutoButtonColor = false
+        button.BorderSizePixel = 0
+        button.Parent = holder
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = button
+
+        button.MouseButton1Click:Connect(function()
+            callback(choice)
+            refreshUi()
+        end)
+
+        table.insert(UI_STATE.choiceRows[id], button)
+    end
+end
+
+local function createButtonRow(parent, leftText, middleText, rightText, leftAction, middleAction, rightAction)
+    local row = createRow(parent, 46)
+
+    local function makeActionButton(text, xOffset, color, callback)
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(0.31, 0, 1, 0)
+        button.Position = UDim2.new(xOffset, 0, 0, 0)
+        button.BackgroundColor3 = color
+        button.Text = text
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.TextSize = 13
+        button.Font = Enum.Font.GothamBold
+        button.BorderSizePixel = 0
+        button.Parent = row
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = button
+
+        button.MouseButton1Click:Connect(callback)
+    end
+
+    makeActionButton(leftText, 0, Color3.fromRGB(88, 43, 170), leftAction)
+    makeActionButton(middleText, 0.345, ELECTRIC_PRIMARY, middleAction)
+    makeActionButton(rightText, 0.69, Color3.fromRGB(54, 42, 96), rightAction)
+end
+
+local function createStatusText(parent, initialText)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = initialText
+    label.TextColor3 = ELECTRIC_MUTED
+    label.TextSize = 12
+    label.Font = Enum.Font.GothamMedium
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+local pageEsp = createPage("ESP")
+local pageAimbot = createPage("Aimbot")
+local pageWorld = createPage("World")
+local pageMisc = createPage("Misc")
+local pageSettings = createPage("Settings")
+
+local navAimbot = createNavButton("Aimbot", "Aimbot", "A")
+navAimbot.LayoutOrder = 1
+local navEsp = createNavButton("ESP", "ESP", "E")
+navEsp.LayoutOrder = 2
+local navMisc = createNavButton("Misc", "Misc", "M")
+navMisc.LayoutOrder = 3
+local navWorld = createNavButton("World", "World", "W")
+navWorld.LayoutOrder = 4
+local navSettings = createNavButton("Settings", "Settings", "S")
+navSettings.LayoutOrder = 5
+
+local espMain = createSection(pageEsp, "Player ESP")
+createToggle(espMain, "ESP_ACTIVO", "ESP", "Enable player and NPC highlight", function(value)
+    CONFIG.ESP_ACTIVO = value
+    if not value then
+        clearEspOnTargets()
+    end
+end)
+createToggle(espMain, "ESP_HIGHLIGHT", "Highlight", "Show Roblox highlight on the target", function(value)
+    CONFIG.ESP_HIGHLIGHT = value
+end)
+createSlider(espMain, "ESP_RENDER_DISTANCE", "ESP Render Distance", 100, 2000, function(value)
+    return tostring(math.floor(value))
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.ESP_RENDER_DISTANCE = math.floor(100 + ((2000 - 100) * alpha))
+end)
+createSlider(espMain, "ENEMY_COLOR_R", "Enemy Color R", 0, 255, function(value)
+    return tostring(math.floor(value))
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.ENEMY_COLOR_R = math.floor((255 * alpha) + 0.5)
+end)
+createSlider(espMain, "ENEMY_COLOR_G", "Enemy Color G", 0, 255, function(value)
+    return tostring(math.floor(value))
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.ENEMY_COLOR_G = math.floor((255 * alpha) + 0.5)
+end)
+createSlider(espMain, "ENEMY_COLOR_B", "Enemy Color B", 0, 255, function(value)
+    return tostring(math.floor(value))
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.ENEMY_COLOR_B = math.floor((255 * alpha) + 0.5)
+end)
+
+local espKeyLabel = Instance.new("TextLabel")
+espKeyLabel.Size = UDim2.new(1, 0, 0, 18)
+espKeyLabel.BackgroundTransparency = 1
+espKeyLabel.Text = "ESP Toggle Key: " .. CONFIG.ESP_TOGGLE_KEY.Name
+espKeyLabel.TextColor3 = Color3.fromRGB(220, 220, 228)
+espKeyLabel.TextSize = 13
+espKeyLabel.Font = Enum.Font.GothamBold
+espKeyLabel.TextXAlignment = Enum.TextXAlignment.Left
+espKeyLabel.Parent = espMain
+
+local espBindButton = Instance.new("TextButton")
+espBindButton.Size = UDim2.new(1, 0, 0, 42)
+espBindButton.BackgroundColor3 = Color3.fromRGB(44, 40, 60)
+espBindButton.Text = "Press key to toggle ESP"
+espBindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+espBindButton.TextSize = 13
+espBindButton.Font = Enum.Font.GothamBold
+espBindButton.BorderSizePixel = 0
+espBindButton.Parent = espMain
+
+local espBindCorner = Instance.new("UICorner")
+espBindCorner.CornerRadius = UDim.new(0, 10)
+espBindCorner.Parent = espBindButton
+
+local aimbotMain = createSection(pageAimbot, "Aim Lock")
+createToggle(aimbotMain, "AIMBOT_ACTIVO", "Aimbot", "Lock target closest to screen center", function(value)
+    CONFIG.AIMBOT_ACTIVO = value
+    if not value then
+        STATE.lockedTarget = nil
+    end
+end)
+createSlider(aimbotMain, "FOV", "FOV", 25, 600, function(value)
+    return tostring(math.floor(value))
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.FOV = math.floor(25 + ((600 - 25) * alpha))
+end)
+createSlider(aimbotMain, "SMOOTH", "Smoothing", 0.05, 1, function(value)
+    return string.format("%.2f", value)
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.SMOOTH = 0.05 + ((1 - 0.05) * alpha)
+end)
+createToggle(aimbotMain, "ANTI_RECOIL", "Anti Recoil", "Compensate vertical recoil while shooting", function(value)
+    CONFIG.ANTI_RECOIL = value
+end)
+createSlider(aimbotMain, "ANTI_RECOIL_STRENGTH", "Anti Recoil Strength", 0, 1, function(value)
+    return string.format("%.2f", value)
+end, function(alpha)
+    alpha = math.clamp(alpha, 0, 1)
+    CONFIG.ANTI_RECOIL_STRENGTH = alpha
+end)
+createToggle(aimbotMain, "SHOW_FOV", "Show FOV", "Display the FOV circle", function(value)
+    CONFIG.SHOW_FOV = value
+end)
+createToggle(aimbotMain, "VISIBILITY_CHECK", "Visibility Check", "Only visible targets are considered", function(value)
+    CONFIG.VISIBILITY_CHECK = value
+end)
+createToggle(aimbotMain, "TEAM_CHECK", "Team Check", "Ignore same-team players", function(value)
+    CONFIG.TEAM_CHECK = value
+end)
+createChoiceRow(aimbotMain, "TARGET_PART", "Target Part", {"Head", "Chest", "HumanoidRootPart"}, function(choice)
+    CONFIG.TARGET_PART = choice
+    STATE.lockedTarget = nil
+end)
+
+local worldMain = createSection(pageWorld, "World")
+createToggle(worldMain, "WORLD_TIME_ENABLED", "Time Override", "Enable or disable the day/night override", function(value)
+    CONFIG.WORLD_TIME_ENABLED = value
+    applyWorldTime()
+end)
+createChoiceRow(worldMain, "WORLD_TIME", "Time Of Day", {"Day", "Night"}, function(choice)
+    CONFIG.WORLD_TIME = choice
+    applyWorldTime()
+end)
+
+local miscMain = createSection(pageMisc, "Misc")
+createToggle(miscMain, "ESP_NAME", "Banner Name", "Show target name on the banner", function(value)
+    CONFIG.ESP_NAME = value
+end)
+createToggle(miscMain, "ESP_DISTANCE", "Banner Distance", "Show target distance on the banner", function(value)
+    CONFIG.ESP_DISTANCE = value
+end)
+
+local settingsMain = createSection(pageSettings, "Settings")
+
+local settingsSub = Instance.new("TextLabel")
+settingsSub.Size = UDim2.new(1, 0, 0, 16)
+settingsSub.BackgroundTransparency = 1
+settingsSub.Text = "Save, load and manage your current setup"
+settingsSub.TextColor3 = Color3.fromRGB(145, 145, 156)
+settingsSub.TextSize = 11
+settingsSub.Font = Enum.Font.GothamMedium
+settingsSub.TextXAlignment = Enum.TextXAlignment.Left
+settingsSub.Parent = settingsMain
+
+local keyLabel = Instance.new("TextLabel")
+keyLabel.Size = UDim2.new(1, 0, 0, 18)
+keyLabel.BackgroundTransparency = 1
+keyLabel.Text = "Menu Key: " .. CONFIG.TOGGLE_MENU_KEY.Name
+keyLabel.TextColor3 = Color3.fromRGB(220, 220, 228)
+keyLabel.TextSize = 13
+keyLabel.Font = Enum.Font.GothamBold
+keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+keyLabel.Parent = settingsMain
+
+local bindButton = Instance.new("TextButton")
+bindButton.Size = UDim2.new(1, 0, 0, 42)
+bindButton.BackgroundColor3 = Color3.fromRGB(44, 40, 60)
+bindButton.Text = "Change Menu Key"
+bindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+bindButton.TextSize = 13
+bindButton.Font = Enum.Font.GothamBold
+bindButton.BorderSizePixel = 0
+bindButton.Parent = settingsMain
+
+local bindCorner = Instance.new("UICorner")
+bindCorner.CornerRadius = UDim.new(0, 10)
+bindCorner.Parent = bindButton
+
+local discordButton = Instance.new("TextButton")
+discordButton.Size = UDim2.new(1, 0, 0, 42)
+discordButton.BackgroundColor3 = ELECTRIC_PRIMARY
+discordButton.Text = "Join Discord"
+discordButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+discordButton.TextSize = 13
+discordButton.Font = Enum.Font.GothamBold
+discordButton.BorderSizePixel = 0
+discordButton.Parent = settingsMain
+
+local discordCorner = Instance.new("UICorner")
+discordCorner.CornerRadius = UDim.new(0, 10)
+discordCorner.Parent = discordButton
+
+local saveStatus = createStatusText(settingsMain, "Status: Ready")
+pcall(function()
+    decorateElectricPanel(loginFrame, true)
+end)
+pcall(function()
+    decorateElectricPanel(panel, false)
+end)
+
+createButtonRow(
+    settingsMain,
+    "Save Settings",
+    "Load Settings",
+    "Reset",
+    function()
+        local ok, message = saveSettings()
+        saveStatus.Text = ok and message or ("Error: " .. message)
+        saveStatus.TextColor3 = ok and Color3.fromRGB(196, 158, 255) or Color3.fromRGB(224, 150, 255)
+        refreshUi()
+    end,
+    function()
+        local ok, message = loadSettings()
+        saveStatus.Text = ok and message or ("Error: " .. message)
+        saveStatus.TextColor3 = ok and Color3.fromRGB(196, 158, 255) or Color3.fromRGB(224, 150, 255)
+        refreshUi()
+    end,
+    function()
+        resetSettings()
+        saveStatus.Text = "Settings reset"
+        saveStatus.TextColor3 = Color3.fromRGB(176, 108, 255)
+        refreshUi()
+    end
+)
+
+local unloadButton = Instance.new("TextButton")
+unloadButton.Size = UDim2.new(1, 0, 0, 42)
+unloadButton.BackgroundColor3 = Color3.fromRGB(82, 44, 142)
+unloadButton.Text = "Unload Script"
+unloadButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+unloadButton.TextSize = 13
+unloadButton.Font = Enum.Font.GothamBlack
+unloadButton.BorderSizePixel = 0
+unloadButton.Parent = settingsMain
+
+local unloadCorner = Instance.new("UICorner")
+unloadCorner.CornerRadius = UDim.new(0, 10)
+unloadCorner.Parent = unloadButton
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FovCircle"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Size = UDim2.new(0, CONFIG.FOV * 2, 0, CONFIG.FOV * 2)
+fovCircle.Position = UDim2.fromOffset(0, 0)
+fovCircle.Visible = false
+fovCircle.ZIndex = 50
+fovCircle.Parent = screenGui
+
+local fovCircleStroke = Instance.new("UIStroke")
+fovCircleStroke.Color = Color3.fromRGB(146, 86, 232)
+fovCircleStroke.Thickness = 1.6
+fovCircleStroke.Transparency = 0.1
+fovCircleStroke.Parent = fovCircle
+
+local fovCircleCorner = Instance.new("UICorner")
+fovCircleCorner.CornerRadius = UDim.new(1, 0)
+fovCircleCorner.Parent = fovCircle
+
+UI.screenGui = screenGui
+UI.espWorldFolder = espWorldFolder
+UI.espGuiFolder = espGuiFolder
+UI.dim = dim
+UI.loginAura = loginAura
+UI.loginFrame = loginFrame
+UI.loginScale = loginScale
+UI.loginStatus = loginStatus
+UI.userBox = userBox
+UI.loginButton = loginButton
+UI.loginDragHandle = loginDragHandle
+UI.panelAura = panelAura
+UI.panel = panel
+UI.panelScale = panelScale
+UI.topBar = topBar
+UI.keyChipText = keyChipText
+UI.sidebar = sidebar
+UI.content = content
+UI.espKeyLabel = espKeyLabel
+UI.espBindButton = espBindButton
+UI.keyLabel = keyLabel
+UI.bindButton = bindButton
+UI.saveStatus = saveStatus
+UI.closeButton = closeButton
+UI.discordButton = discordButton
+UI.unloadButton = unloadButton
+UI.fovCircle = fovCircle
+end
+
+task.defer(function()
+    TweenService:Create(UI.loginScale, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+        Scale = PANEL_OPEN_SCALE,
+    }):Play()
+end)
+
+local function syncAuraPosition(aura, frame, padding)
+    if not aura or not frame then
+        return
+    end
+
+    aura.Position = UDim2.new(
+        frame.Position.X.Scale,
+        frame.Position.X.Offset - padding,
+        frame.Position.Y.Scale,
+        frame.Position.Y.Offset - padding
+    )
+end
+
+local function getViewportSize()
+    local cam = getCurrentCamera()
+    if cam then
+        return cam.ViewportSize
+    end
+    return Vector2.new(1920, 1080)
+end
+
+local function clampFramePosition(frame, position)
+    local viewportSize = getViewportSize()
+    local width = frame.AbsoluteSize.X > 0 and frame.AbsoluteSize.X or frame.Size.X.Offset
+    local height = frame.AbsoluteSize.Y > 0 and frame.AbsoluteSize.Y or frame.Size.Y.Offset
+    local minOffset = 12
+    local maxX = math.max(minOffset, viewportSize.X - width - 12)
+    local maxY = math.max(minOffset, viewportSize.Y - height - 12)
+
+    return UDim2.new(
+        0,
+        math.clamp(position.X.Offset, minOffset, maxX),
+        0,
+        math.clamp(position.Y.Offset, minOffset, maxY)
+    )
+end
+
+local function startDragging(frame, input)
+    STATE.dragging = true
+    STATE.dragTarget = frame
+    STATE.dragStart = input.Position
+    STATE.dragOrigin = UDim2.new(0, frame.Position.X.Offset, 0, frame.Position.Y.Offset)
+end
+
+local function bindDrag(handle, frame)
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            startDragging(frame, input)
+        end
+    end)
+end
+
+local function updateToggleVisual(id)
+    local entry = UI_STATE.toggles[id]
+    if not entry then
+        return
+    end
+
+    local enabled = CONFIG[id]
+    local backgroundColor = enabled and ELECTRIC_PRIMARY or Color3.fromRGB(48, 48, 58)
+    local knobPosition = enabled and UDim2.new(1, -24, 0.5, -11) or UDim2.new(0, 2, 0.5, -11)
+    local labelColor = enabled and Color3.fromRGB(255, 255, 255) or ELECTRIC_MUTED
+
+    if entry.lastEnabled == nil then
+        entry.button.BackgroundColor3 = backgroundColor
+        entry.knob.Position = knobPosition
+        entry.stateLabel.TextColor3 = labelColor
+    elseif entry.lastEnabled ~= enabled then
+        TweenService:Create(entry.button, TOGGLE_TWEEN_INFO, {
+            BackgroundColor3 = backgroundColor,
+        }):Play()
+        TweenService:Create(entry.knob, TOGGLE_TWEEN_INFO, {
+            Position = knobPosition,
+        }):Play()
+        TweenService:Create(entry.stateLabel, TOGGLE_TWEEN_INFO, {
+            TextColor3 = labelColor,
+        }):Play()
+    end
+
+    entry.stateLabel.Text = enabled and "ON" or "OFF"
+    entry.lastEnabled = enabled
+end
+
+local function updateSliderVisual(id)
+    local entry = UI_STATE.sliders[id]
+    if not entry then
+        return
+    end
+
+    local rawValue = CONFIG[id]
+    local alpha = math.clamp((rawValue - entry.min) / (entry.max - entry.min), 0, 1)
+    entry.fill.Size = UDim2.new(alpha, 0, 1, 0)
+    entry.knob.Position = UDim2.new(alpha, 0, 0.5, 0)
+    entry.label.Text = entry.formatter(rawValue)
+
+    if id == "FOV" then
+        UI.fovCircle.Size = UDim2.new(0, CONFIG.FOV * 2, 0, CONFIG.FOV * 2)
+    end
+end
+
+local function updateFovCirclePosition()
+    local cam = getCurrentCamera()
+    if cam then
+        UI.fovCircle.Position = UDim2.fromOffset(
+            math.floor(cam.ViewportSize.X * 0.5),
+            math.floor(cam.ViewportSize.Y * 0.5)
+        )
+    else
+        UI.fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+    end
+end
+
+local function tweenInstance(instance, info, properties)
+    TweenService:Create(instance, info, properties):Play()
+end
+
+local function updateChoiceVisual(id, currentValue)
+    local buttons = UI_STATE.choiceRows[id]
+    if not buttons then
+        return
+    end
+
+    for _, button in ipairs(buttons) do
+        local active = button.Text == currentValue
+        local backgroundColor = active and ELECTRIC_PRIMARY or Color3.fromRGB(52, 53, 64)
+        local textColor = active and Color3.fromRGB(255, 255, 255) or ELECTRIC_MUTED
+        local lastActive = button:GetAttribute("HabibiLastActive")
+
+        if lastActive == nil then
+            button.BackgroundColor3 = backgroundColor
+            button.TextColor3 = textColor
+        elseif lastActive ~= active then
+            tweenInstance(button, CHOICE_TWEEN_INFO, {
+                BackgroundColor3 = backgroundColor,
+                TextColor3 = textColor,
+            })
+        end
+
+        button:SetAttribute("HabibiLastActive", active)
+    end
+end
+
+local function getEspColor(model, isVisible)
+    if sameTeam(model) then
+        return isVisible and ESP_TEAM_VISIBLE_COLOR or ESP_HIDDEN_COLOR
+    end
+
+    return isVisible and getConfiguredEnemyColor() or ESP_HIDDEN_COLOR
+end
+
+applyWorldTime = function()
+    if not CONFIG.WORLD_TIME_ENABLED then
+        return
+    end
+
+    if CONFIG.WORLD_TIME == "Night" then
+        Lighting.ClockTime = 22
+        Lighting.TimeOfDay = "22:00:00"
+        return
+    end
+
+    Lighting.ClockTime = 12
+    Lighting.TimeOfDay = "12:00:00"
+end
+
+local function setActiveTab(tabName)
+    STATE.activeTab = tabName
+
+    for name, page in pairs(UI_STATE.pages) do
+        page.Visible = name == tabName
+    end
+
+    for name, nav in pairs(UI_STATE.navButtons) do
+        local active = name == tabName
+        tweenInstance(nav.button, TAB_TWEEN_INFO, {
+            BackgroundColor3 = active and Color3.fromRGB(83, 54, 136) or Color3.fromRGB(33, 34, 46),
+        })
+        tweenInstance(nav.stroke, TAB_TWEEN_INFO, {
+            Transparency = active and 0.06 or 0.68,
+        })
+        tweenInstance(nav.badge, TAB_TWEEN_INFO, {
+            BackgroundColor3 = active and ELECTRIC_PRIMARY_SOFT or Color3.fromRGB(56, 29, 102),
+        })
+        tweenInstance(nav.title, TAB_TWEEN_INFO, {
+            TextColor3 = active and ELECTRIC_TEXT or ELECTRIC_MUTED,
+        })
+        tweenInstance(nav.activeBar, TAB_TWEEN_INFO, {
+            Size = active and UDim2.new(0, 3, 1, -14) or UDim2.new(0, 0, 1, -14),
+        })
+
+        if nav.glow then
+            tweenInstance(nav.glow, TAB_TWEEN_INFO, {
+                BackgroundTransparency = active and 0.94 or 1,
+            })
+        end
+    end
+end
+
+local function setMenuVisible(visible, instant)
+    if visible then
+        UI.panel.Visible = true
+        UI.dim.Visible = true
+        UI.panelAura.Visible = true
+
+        if instant then
+            UI.panelScale.Scale = PANEL_OPEN_SCALE
+            UI.dim.BackgroundTransparency = 0.12
+            refreshUi()
+            return
+        end
+
+        TweenService:Create(UI.panelScale, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Scale = PANEL_OPEN_SCALE,
+        }):Play()
+        TweenService:Create(UI.dim, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.12,
+        }):Play()
+        refreshUi()
+        return
+    end
+
+    if instant then
+        UI.panelScale.Scale = PANEL_CLOSED_SCALE
+        UI.panel.Visible = false
+        UI.panelAura.Visible = false
+        refreshUi()
+        return
+    end
+
+    local scaleTween = TweenService:Create(UI.panelScale, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+        Scale = PANEL_CLOSED_SCALE,
+    })
+    local dimTween = TweenService:Create(UI.dim, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+        BackgroundTransparency = 1,
+    })
+
+    scaleTween:Play()
+    dimTween:Play()
+
+    task.spawn(function()
+        scaleTween.Completed:Wait()
+        if not UI.panel.Visible then
+            return
+        end
+        UI.panel.Visible = false
+        UI.panelAura.Visible = false
+        refreshUi()
+    end)
+end
+
+function refreshUi()
+    for id in pairs(UI_STATE.toggles) do
+        updateToggleVisual(id)
+    end
+
+    for id in pairs(UI_STATE.sliders) do
+        updateSliderVisual(id)
+    end
+
+    updateChoiceVisual("TARGET_PART", CONFIG.TARGET_PART)
+    updateChoiceVisual("WORLD_TIME", CONFIG.WORLD_TIME)
+    UI.keyLabel.Text = "Menu Key: " .. CONFIG.TOGGLE_MENU_KEY.Name
+    UI.keyChipText.Text = CONFIG.TOGGLE_MENU_KEY.Name
+    UI.espKeyLabel.Text = "ESP Toggle Key: " .. CONFIG.ESP_TOGGLE_KEY.Name
+    applyWorldTime()
+    updateFovCirclePosition()
+    UI.fovCircle.Visible = CONFIG.SHOW_FOV and STATE.authenticated
+    UI.panelAura.Visible = UI.panel.Visible and STATE.authenticated
+    syncAuraPosition(UI.panelAura, UI.panel, 36)
+    syncAuraPosition(UI.loginAura, UI.loginFrame, 30)
+
+    if not STATE.authenticated then
+        UI.dim.Visible = true
+        UI.dim.BackgroundTransparency = 0.12
+        UI.loginAura.Visible = UI.loginFrame.Visible
+    elseif not UI.panel.Visible then
+        UI.dim.Visible = false
+        UI.loginAura.Visible = false
+        UI.panelAura.Visible = false
+    end
+end
+
+do
+    local ok, message = loadSettings()
+    if ok then
+        UI.saveStatus.Text = "Settings auto-loaded on inject"
+        UI.saveStatus.TextColor3 = Color3.fromRGB(196, 158, 255)
+    else
+        UI.saveStatus.Text = "Status: Ready"
+        UI.saveStatus.TextColor3 = Color3.fromRGB(196, 158, 255)
+    end
+end
+
+local function unloadScript()
+    if not STATE.running then
+        return
+    end
+
+    STATE.running = false
+    CONFIG.AIMBOT_ACTIVO = false
+    CONFIG.ESP_ACTIVO = false
+    STATE.lockedTarget = nil
+
+    if INPUT_CONN then
+        INPUT_CONN:Disconnect()
+        INPUT_CONN = nil
+    end
+
+    if INPUT_ENDED_CONN then
+        INPUT_ENDED_CONN:Disconnect()
+        INPUT_ENDED_CONN = nil
+    end
+
+    if RENDER_CONN then
+        RENDER_CONN:Disconnect()
+        RENDER_CONN = nil
+    end
+
+    pcall(function()
+        RunService:UnbindFromRenderStep(AIMBOT_BIND_NAME)
+    end)
+
+    cleanupEspObjects()
+    if UI.espWorldFolder then
+        UI.espWorldFolder:Destroy()
+    end
+    if UI.espGuiFolder then
+        UI.espGuiFolder:Destroy()
+    end
+    UI.screenGui:Destroy()
+end
+
+local function processLogin()
+    if UI.userBox.Text ~= CONFIG.LOGIN_USER then
+        UI.loginStatus.Text = "User incorrecto"
+        UI.loginStatus.TextColor3 = Color3.fromRGB(224, 150, 255)
+        UI.userBox.Text = ""
+        return
+    end
+
+    STATE.authenticated = true
+    UI.loginStatus.Text = "Acceso concedido"
+    UI.loginStatus.TextColor3 = Color3.fromRGB(196, 158, 255)
+
+    local loginTween = TweenService:Create(UI.loginScale, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+        Scale = PANEL_CLOSED_SCALE,
+    })
+
+    loginTween:Play()
+
+    task.spawn(function()
+        loginTween.Completed:Wait()
+        if not STATE.authenticated then
+            return
+        end
+        UI.loginFrame.Visible = false
+        UI.loginAura.Visible = false
+        setMenuVisible(true, false)
+    end)
+end
+
+UI.loginButton.MouseButton1Click:Connect(processLogin)
+UI.userBox.FocusLost:Connect(function(pressedEnter)
+    if pressedEnter then
+        processLogin()
+    end
+end)
+
+bindDrag(UI.loginDragHandle, UI.loginFrame)
+
+UI.bindButton.MouseButton1Click:Connect(function()
+    STATE.bindMode = true
+    UI.bindButton.Text = "Press any key..."
+end)
+
+UI.espBindButton.MouseButton1Click:Connect(function()
+    STATE.espBindMode = true
+    UI.espBindButton.Text = "Press any key..."
+end)
+
+UI.closeButton.MouseButton1Click:Connect(function()
+    setMenuVisible(false, false)
+end)
+
+UI.discordButton.MouseButton1Click:Connect(function()
+    local copied = false
+    if setclipboard then
+        copied = pcall(setclipboard, DISCORD_INVITE)
+    end
+
+    UI.saveStatus.Text = copied and "Discord link copied" or ("Discord: " .. DISCORD_INVITE)
+    UI.saveStatus.TextColor3 = Color3.fromRGB(196, 158, 255)
+    pushNotification("HabibiScripts", copied and "Discord link copied to clipboard" or DISCORD_INVITE)
+end)
+
+UI.unloadButton.MouseButton1Click:Connect(unloadScript)
+
+for tabName, nav in pairs(UI_STATE.navButtons) do
+    nav.button.MouseButton1Click:Connect(function()
+        setActiveTab(tabName)
+        refreshUi()
+    end)
+end
+
+bindDrag(UI.topBar, UI.panel)
+
+INPUT_ENDED_CONN = UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        STATE.dragging = false
+        STATE.dragTarget = nil
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        STATE.rightMouseDown = false
+        STATE.lockedTarget = nil
+    end
+end)
+
+pcall(function()
+    RunService:UnbindFromRenderStep(AIMBOT_BIND_NAME)
+end)
+
+INPUT_CONN = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not STATE.running then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        STATE.rightMouseDown = true
+        return
+    end
+
+    if gameProcessed then
+        return
+    end
+
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then
+        return
+    end
+
+    if not STATE.authenticated then
+        if input.KeyCode == Enum.KeyCode.Return then
+            processLogin()
+        end
+        return
+    end
+
+    if STATE.espBindMode then
+        if input.KeyCode ~= Enum.KeyCode.Unknown then
+            CONFIG.ESP_TOGGLE_KEY = input.KeyCode
+            STATE.espBindMode = false
+            UI.espBindButton.Text = "Press key to toggle ESP"
+            refreshUi()
+        end
+        return
+    end
+
+    if STATE.bindMode then
+        if input.KeyCode ~= Enum.KeyCode.Unknown then
+            CONFIG.TOGGLE_MENU_KEY = input.KeyCode
+            STATE.bindMode = false
+            UI.bindButton.Text = "Change Menu Key"
+            refreshUi()
+        end
+        return
+    end
+
+    if input.KeyCode == CONFIG.TOGGLE_MENU_KEY then
+        setMenuVisible(not UI.panel.Visible, false)
+        return
+    end
+
+    if input.KeyCode == CONFIG.ESP_TOGGLE_KEY then
+        CONFIG.ESP_ACTIVO = not CONFIG.ESP_ACTIVO
+        if not CONFIG.ESP_ACTIVO then
+            clearEspOnTargets()
+        end
+        pushNotification("HabibiScripts", CONFIG.ESP_ACTIVO and "ESP enabled" or "ESP disabled")
+        refreshUi()
+    end
+end)
+
+RENDER_CONN = RunService.RenderStepped:Connect(function()
+    if not STATE.running then
+        return
+    end
+
+    if STATE.activeSlider and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+        local entry = UI_STATE.sliders[STATE.activeSlider]
+        if entry then
+            local alpha = (UserInputService:GetMouseLocation().X - entry.bar.AbsolutePosition.X) / entry.bar.AbsoluteSize.X
+            entry.setter(alpha)
+            updateSliderVisual(STATE.activeSlider)
+        end
+    else
+        STATE.activeSlider = nil
+    end
+
+    if STATE.dragging and STATE.dragTarget and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+        local delta = UserInputService:GetMouseLocation() - STATE.dragStart
+        local proposedPosition = UDim2.new(
+            0,
+            STATE.dragOrigin.X.Offset + delta.X,
+            0,
+            STATE.dragOrigin.Y.Offset + delta.Y
+        )
+
+        STATE.dragTarget.Position = clampFramePosition(STATE.dragTarget, proposedPosition)
+        if STATE.dragTarget == UI.panel then
+            syncAuraPosition(UI.panelAura, UI.panel, 36)
+        elseif STATE.dragTarget == UI.loginFrame then
+            syncAuraPosition(UI.loginAura, UI.loginFrame, 30)
+        end
+    else
+        STATE.dragging = false
+        STATE.dragTarget = nil
+    end
+
+    local cam = getCurrentCamera()
+    if cam then
+        local currentPitch = math.asin(math.clamp(cam.CFrame.LookVector.Y, -1, 1))
+
+        if CONFIG.ANTI_RECOIL and STATE.authenticated and not UI.panel.Visible and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            local lastPitch = STATE.lastCameraPitch
+            if lastPitch then
+                local pitchDelta = currentPitch - lastPitch
+                if pitchDelta > 0 and pitchDelta < 0.09 then
+                    local correction = pitchDelta * math.clamp(CONFIG.ANTI_RECOIL_STRENGTH, 0, 1)
+                    cam.CFrame = cam.CFrame * CFrame.Angles(-correction, 0, 0)
+                    currentPitch = math.asin(math.clamp(cam.CFrame.LookVector.Y, -1, 1))
+                end
+            end
+        end
+
+        STATE.lastCameraPitch = currentPitch
+    else
+        STATE.lastCameraPitch = nil
+    end
+
+    updateFovCirclePosition()
+    UI.fovCircle.Visible = CONFIG.SHOW_FOV and STATE.authenticated
+end)
+
+RunService:BindToRenderStep(AIMBOT_BIND_NAME, Enum.RenderPriority.Camera.Value + 2, function()
+    if not STATE.running or not STATE.authenticated then
+        return
+    end
+
+    local cam = getCurrentCamera()
+    if not cam then
+        return
+    end
+
+    if CONFIG.AIMBOT_ACTIVO then
+        if UI.panel.Visible or not STATE.rightMouseDown then
+            STATE.lockedTarget = nil
+            return
+        end
+
+        if tick() - STATE.lastScan >= 0.05 then
+            STATE.lastScan = tick()
+            refreshTargets()
+        end
+
+        local target = getBestTarget()
+        STATE.lockedTarget = target
+
+        if target then
+            aimAt(target)
+        end
+    else
+        STATE.lockedTarget = nil
+    end
+
+end)
+
+setActiveTab("ESP")
+refreshUi()
+
+while STATE.running do
+    task.wait(0.18)
+
+    if not STATE.authenticated then
+        continue
+    end
+
+    if tick() - STATE.lastWorldApply >= WORLD_APPLY_INTERVAL then
+        STATE.lastWorldApply = tick()
+        applyWorldTime()
+    end
+
+    if tick() - STATE.lastScan >= SCAN_INTERVAL then
+        STATE.lastScan = tick()
+        refreshTargets()
+    end
+
+    if CONFIG.ESP_ACTIVO then
+        for _, model in ipairs(TARGETS) do
+            if isValidTarget(model) then
+                local root = getTargetPart(model)
+                local data = ESP_CACHE[model]
+
+                if not data then
+                    data = {}
+                    ESP_CACHE[model] = data
+                end
+
+                if root then
+                    local cam = getCurrentCamera()
+                    if cam then
+                        local distance = (root.Position - cam.CFrame.Position).Magnitude
+                        local targetVisible = getVisibilityCached(model, root.Position)
+                        local targetColor = getEspColor(model, targetVisible)
+                        local highlight = ensureModelHighlight(model, data)
+                        if distance > CONFIG.ESP_RENDER_DISTANCE then
+                            highlight.Enabled = false
+                            if data.billboard then
+                                data.billboard.Enabled = false
+                            end
+                            continue
+                        end
+
+                        if data.lastColor ~= targetColor then
+                            highlight.OutlineColor = targetColor
+                            data.lastColor = targetColor
+                        end
+                        highlight.Enabled = CONFIG.ESP_HIGHLIGHT
+
+                        local billboard = ensureDistanceBillboard(root, data)
+                        billboard.Enabled = CONFIG.ESP_DISTANCE
+                        billboard.MaxDistance = CONFIG.ESP_RENDER_DISTANCE
+
+                        local billboardMetrics = getBillboardMetrics(distance)
+                        billboard.Size = UDim2.new(0, billboardMetrics.width, 0, billboardMetrics.height)
+                        billboard.StudsOffset = Vector3.new(0, billboardMetrics.studsOffset, 0)
+
+                        local card = billboard and billboard:FindFirstChild("Card")
+                        if card then
+                            local holder = card:FindFirstChild("Holder")
+                            local nameLabel = holder and holder:FindFirstChild("NameLabel")
+                            local distanceLabel = holder and holder:FindFirstChild("DistanceLabel")
+                            local accent = card:FindFirstChild("Accent")
+                            local cardStroke = card:FindFirstChild("CardStroke")
+                            local glow = billboard:FindFirstChild("Glow")
+                            local topEdge = card:FindFirstChild("TopEdge")
+                            local topEdgeGradient = topEdge and topEdge:FindFirstChildOfClass("UIGradient")
+                            local slash = card:FindFirstChild("Slash")
+                            local distanceChip = card:FindFirstChild("DistanceChip")
+                            local distanceChipStroke = distanceChip and distanceChip:FindFirstChild("DistanceChipStroke")
+                            local pulse = getElectricPulse(model)
+
+                            if accent then
+                                accent.BackgroundColor3 = targetColor
+                            end
+
+                            if cardStroke then
+                                cardStroke.Color = targetColor
+                                cardStroke.Transparency = pulse.cardStrokeTransparency
+                            end
+
+                            if glow then
+                                glow.BackgroundColor3 = targetColor
+                                glow.BackgroundTransparency = pulse.glowTransparency
+                            end
+
+                            if topEdge then
+                                topEdge.BackgroundColor3 = targetColor
+                            end
+
+                            if topEdgeGradient then
+                                topEdgeGradient.Transparency = pulse.edgeTransparency
+                            end
+
+                            if slash then
+                                slash.BackgroundColor3 = targetColor
+                                slash.BackgroundTransparency = pulse.slashTransparency
+                            end
+
+                            if distanceChipStroke then
+                                distanceChipStroke.Color = targetColor
+                                distanceChipStroke.Transparency = pulse.chipStrokeTransparency
+                            end
+
+                            if nameLabel then
+                                nameLabel.Visible = CONFIG.ESP_NAME
+                                nameLabel.Text = CONFIG.ESP_NAME and getTargetDisplayText(model) or ""
+                                nameLabel.TextColor3 = targetColor
+                                nameLabel.TextSize = billboardMetrics.nameTextSize
+                            end
+
+                            if distanceLabel then
+                                distanceLabel.Visible = CONFIG.ESP_DISTANCE
+                                distanceLabel.Text = CONFIG.ESP_DISTANCE and ("RANGE // " .. string.upper(formatStudDistance(distance))) or ""
+                                distanceLabel.TextColor3 = Color3.fromRGB(
+                                    math.clamp(math.floor((targetColor.R * 255) + 72), 0, 255),
+                                    math.clamp(math.floor((targetColor.G * 255) + 72), 0, 255),
+                                    math.clamp(math.floor((targetColor.B * 255) + 72), 0, 255)
+                                )
+                                distanceLabel.TextSize = billboardMetrics.distanceTextSize
+                            end
+
+                            billboard.Enabled = CONFIG.ESP_NAME or CONFIG.ESP_DISTANCE
+                        end
+                    end
+                end
+            end
+        end
+    else
+        clearEspOnTargets()
+    end
+
+    for model, data in pairs(ESP_CACHE) do
+        if not isValidTarget(model) then
+            if data.highlight then data.highlight:Destroy() end
+            if data.billboard then data.billboard:Destroy() end
+            ESP_CACHE[model] = nil
+            VISIBILITY_CACHE[model] = nil
+        end
+    end
+end
