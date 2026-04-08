@@ -117,6 +117,7 @@ local PANEL_CLOSED_SCALE = 0.96
 local TOGGLE_TWEEN_INFO = TweenInfo.new(0.14, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local TAB_TWEEN_INFO = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local CHOICE_TWEEN_INFO = TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local STUDS_PER_METER = 3.57
 local DISCORD_INVITE = "https://discord.gg/habibiscripts"
 
 local function getConfiguredEnemyColor()
@@ -334,6 +335,10 @@ local function formatStudDistance(distance)
     end
 
     return string.format("%d studs", math.floor(distance + 0.5))
+end
+
+local function formatMeterDistance(distance)
+    return string.format("%d m", math.max(0, math.floor(distance / STUDS_PER_METER)))
 end
 
 local function getModelPhase(model)
@@ -726,9 +731,9 @@ local function ensureDistanceBillboard(rootPart, data)
         billboard = Instance.new("BillboardGui")
         billboard.Name = "DistanciaLabel"
         billboard.Parent = rootPart
-        billboard.Size = UDim2.new(0, 252, 0, 64)
+        billboard.Size = UDim2.new(0, 274, 0, 76)
         billboard.MaxDistance = CONFIG.ESP_RENDER_DISTANCE
-        billboard.StudsOffset = Vector3.new(0, -5.25, 0)
+        billboard.StudsOffset = Vector3.new(0, -5.35, 0)
         billboard.AlwaysOnTop = true
 
         local glow = Instance.new("Frame")
@@ -736,73 +741,127 @@ local function ensureDistanceBillboard(rootPart, data)
         glow.Parent = billboard
         glow.AnchorPoint = Vector2.new(0.5, 0.5)
         glow.Position = UDim2.fromScale(0.5, 0.5)
-        glow.Size = UDim2.new(1, 26, 1, 22)
+        glow.Size = UDim2.new(1, 34, 1, 28)
         glow.BackgroundColor3 = ELECTRIC_PRIMARY
-        glow.BackgroundTransparency = 0.9
+        glow.BackgroundTransparency = 0.88
         glow.BorderSizePixel = 0
 
         local glowCorner = Instance.new("UICorner")
-        glowCorner.CornerRadius = UDim.new(0, 18)
+        glowCorner.CornerRadius = UDim.new(0, 24)
         glowCorner.Parent = glow
 
         local glowGradient = Instance.new("UIGradient")
         glowGradient.Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-            ColorSequenceKeypoint.new(0.4, ELECTRIC_PRIMARY_SOFT),
-            ColorSequenceKeypoint.new(1, ELECTRIC_PRIMARY),
+            ColorSequenceKeypoint.new(0.35, ELECTRIC_PRIMARY_SOFT),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(38, 14, 72)),
         })
-        glowGradient.Rotation = 25
+        glowGradient.Rotation = 18
         glowGradient.Parent = glow
 
         local card = Instance.new("Frame")
         card.Name = "Card"
         card.Parent = billboard
         card.Size = UDim2.new(1, 0, 1, 0)
-        card.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
-        card.BackgroundTransparency = 0.02
+        card.BackgroundColor3 = Color3.fromRGB(7, 8, 14)
+        card.BackgroundTransparency = 0.01
         card.BorderSizePixel = 0
 
         local cardCorner = Instance.new("UICorner")
-        cardCorner.CornerRadius = UDim.new(0, 16)
+        cardCorner.CornerRadius = UDim.new(0, 18)
         cardCorner.Parent = card
 
         local cardStroke = Instance.new("UIStroke")
         cardStroke.Name = "CardStroke"
-        cardStroke.Thickness = 1.45
-        cardStroke.Transparency = 0.06
-        cardStroke.Color = Color3.fromRGB(255, 255, 255)
+        cardStroke.Thickness = 1.6
+        cardStroke.Transparency = 0.08
+        cardStroke.Color = Color3.fromRGB(238, 234, 255)
         cardStroke.Parent = card
 
         local cardGradient = Instance.new("UIGradient")
         cardGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 25, 36)),
-            ColorSequenceKeypoint.new(0.38, Color3.fromRGB(12, 12, 18)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 5, 9)),
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(26, 28, 40)),
+            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(12, 12, 18)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 5, 10)),
         })
         cardGradient.Rotation = 90
         cardGradient.Parent = card
 
+        local ambient = Instance.new("Frame")
+        ambient.Name = "Ambient"
+        ambient.Parent = card
+        ambient.AnchorPoint = Vector2.new(1, 0)
+        ambient.Position = UDim2.new(1, -12, 0, 12)
+        ambient.Size = UDim2.new(0, 110, 0, 42)
+        ambient.BackgroundColor3 = ELECTRIC_PRIMARY
+        ambient.BackgroundTransparency = 0.9
+        ambient.BorderSizePixel = 0
+
+        local ambientCorner = Instance.new("UICorner")
+        ambientCorner.CornerRadius = UDim.new(1, 0)
+        ambientCorner.Parent = ambient
+
+        local ambientGradient = Instance.new("UIGradient")
+        ambientGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(1, ELECTRIC_PRIMARY),
+        })
+        ambientGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.15),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        ambientGradient.Rotation = 20
+        ambientGradient.Parent = ambient
+
+        local grid = Instance.new("Frame")
+        grid.Name = "Grid"
+        grid.Parent = card
+        grid.Size = UDim2.new(1, -20, 1, -18)
+        grid.Position = UDim2.new(0, 10, 0, 9)
+        grid.BackgroundTransparency = 1
+        grid.BorderSizePixel = 0
+
+        for index = 0, 3 do
+            local line = Instance.new("Frame")
+            line.Name = "GridLine" .. index
+            line.Parent = grid
+            line.Size = UDim2.new(1, 0, 0, 1)
+            line.Position = UDim2.new(0, 0, 0, index * 14)
+            line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            line.BackgroundTransparency = 0.94
+            line.BorderSizePixel = 0
+        end
+
         local topEdge = Instance.new("Frame")
         topEdge.Name = "TopEdge"
         topEdge.Parent = card
-        topEdge.Size = UDim2.new(1, -20, 0, 2)
-        topEdge.Position = UDim2.new(0, 10, 0, 8)
+        topEdge.Size = UDim2.new(1, -24, 0, 3)
+        topEdge.Position = UDim2.new(0, 12, 0, 9)
         topEdge.BackgroundColor3 = ESP_VISIBLE_COLOR
         topEdge.BorderSizePixel = 0
 
+        local topEdgeCorner = Instance.new("UICorner")
+        topEdgeCorner.CornerRadius = UDim.new(1, 0)
+        topEdgeCorner.Parent = topEdge
+
         local topEdgeGradient = Instance.new("UIGradient")
+        topEdgeGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(0.5, ESP_VISIBLE_COLOR),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+        })
         topEdgeGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.35),
+            NumberSequenceKeypoint.new(0, 0.6),
             NumberSequenceKeypoint.new(0.55, 0),
-            NumberSequenceKeypoint.new(1, 0.35),
+            NumberSequenceKeypoint.new(1, 0.6),
         })
         topEdgeGradient.Parent = topEdge
 
         local accent = Instance.new("Frame")
         accent.Name = "Accent"
         accent.Parent = card
-        accent.Size = UDim2.new(0, 4, 1, -18)
-        accent.Position = UDim2.new(0, 10, 0, 9)
+        accent.Size = UDim2.new(0, 6, 1, -22)
+        accent.Position = UDim2.new(0, 10, 0, 11)
         accent.BackgroundColor3 = ESP_VISIBLE_COLOR
         accent.BorderSizePixel = 0
 
@@ -810,15 +869,41 @@ local function ensureDistanceBillboard(rootPart, data)
         accentCorner.CornerRadius = UDim.new(1, 0)
         accentCorner.Parent = accent
 
+        local accentGlow = Instance.new("Frame")
+        accentGlow.Name = "AccentGlow"
+        accentGlow.Parent = accent
+        accentGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+        accentGlow.Position = UDim2.fromScale(0.5, 0.5)
+        accentGlow.Size = UDim2.new(1, 8, 1, 8)
+        accentGlow.BackgroundColor3 = ESP_VISIBLE_COLOR
+        accentGlow.BackgroundTransparency = 0.72
+        accentGlow.BorderSizePixel = 0
+
+        local accentGlowCorner = Instance.new("UICorner")
+        accentGlowCorner.CornerRadius = UDim.new(1, 0)
+        accentGlowCorner.Parent = accentGlow
+
+        local tagLabel = Instance.new("TextLabel")
+        tagLabel.Name = "TagLabel"
+        tagLabel.Parent = card
+        tagLabel.Size = UDim2.new(0, 120, 0, 14)
+        tagLabel.Position = UDim2.new(0, 22, 0, 14)
+        tagLabel.BackgroundTransparency = 1
+        tagLabel.Text = "HABIBI // TRACKED"
+        tagLabel.TextColor3 = Color3.fromRGB(182, 175, 214)
+        tagLabel.TextSize = 9
+        tagLabel.Font = Enum.Font.GothamBlack
+        tagLabel.TextXAlignment = Enum.TextXAlignment.Left
+
         local slash = Instance.new("Frame")
         slash.Name = "Slash"
         slash.Parent = card
         slash.AnchorPoint = Vector2.new(0.5, 0.5)
-        slash.Position = UDim2.new(1, -30, 0, 17)
-        slash.Size = UDim2.new(0, 58, 0, 3)
-        slash.Rotation = 12
+        slash.Position = UDim2.new(1, -36, 1, -20)
+        slash.Size = UDim2.new(0, 86, 0, 2)
+        slash.Rotation = -18
         slash.BackgroundColor3 = ESP_VISIBLE_COLOR
-        slash.BackgroundTransparency = 0.52
+        slash.BackgroundTransparency = 0.4
         slash.BorderSizePixel = 0
 
         local slashCorner = Instance.new("UICorner")
@@ -829,20 +914,28 @@ local function ensureDistanceBillboard(rootPart, data)
         distanceChip.Name = "DistanceChip"
         distanceChip.Parent = card
         distanceChip.AnchorPoint = Vector2.new(1, 0)
-        distanceChip.Position = UDim2.new(1, -10, 0, 12)
-        distanceChip.Size = UDim2.new(0, 68, 0, 18)
-        distanceChip.BackgroundColor3 = Color3.fromRGB(30, 14, 52)
+        distanceChip.Position = UDim2.new(1, -12, 0, 12)
+        distanceChip.Size = UDim2.new(0, 92, 0, 24)
+        distanceChip.BackgroundColor3 = Color3.fromRGB(25, 16, 43)
         distanceChip.BorderSizePixel = 0
 
         local distanceChipCorner = Instance.new("UICorner")
         distanceChipCorner.CornerRadius = UDim.new(0, 999)
         distanceChipCorner.Parent = distanceChip
 
+        local distanceChipGradient = Instance.new("UIGradient")
+        distanceChipGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(42, 26, 70)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 11, 28)),
+        })
+        distanceChipGradient.Rotation = 0
+        distanceChipGradient.Parent = distanceChip
+
         local distanceChipStroke = Instance.new("UIStroke")
         distanceChipStroke.Name = "DistanceChipStroke"
         distanceChipStroke.Color = ESP_VISIBLE_COLOR
-        distanceChipStroke.Transparency = 0.2
-        distanceChipStroke.Thickness = 1
+        distanceChipStroke.Transparency = 0.14
+        distanceChipStroke.Thickness = 1.15
         distanceChipStroke.Parent = distanceChip
 
         local chipLabel = Instance.new("TextLabel")
@@ -850,16 +943,16 @@ local function ensureDistanceBillboard(rootPart, data)
         chipLabel.Parent = distanceChip
         chipLabel.Size = UDim2.fromScale(1, 1)
         chipLabel.BackgroundTransparency = 1
-        chipLabel.Text = "RANGE"
+        chipLabel.Text = "0 m"
         chipLabel.TextColor3 = Color3.fromRGB(233, 228, 255)
-        chipLabel.TextSize = 9
+        chipLabel.TextSize = 11
         chipLabel.Font = Enum.Font.GothamBlack
 
         local contentPadding = Instance.new("UIPadding")
-        contentPadding.PaddingLeft = UDim.new(0, 22)
-        contentPadding.PaddingRight = UDim.new(0, 14)
-        contentPadding.PaddingTop = UDim.new(0, 14)
-        contentPadding.PaddingBottom = UDim.new(0, 10)
+        contentPadding.PaddingLeft = UDim.new(0, 26)
+        contentPadding.PaddingRight = UDim.new(0, 18)
+        contentPadding.PaddingTop = UDim.new(0, 28)
+        contentPadding.PaddingBottom = UDim.new(0, 12)
         contentPadding.Parent = card
 
         local holder = Instance.new("Frame")
@@ -869,7 +962,7 @@ local function ensureDistanceBillboard(rootPart, data)
         holder.BackgroundTransparency = 1
 
         local list = Instance.new("UIListLayout")
-        list.Padding = UDim.new(0, 5)
+        list.Padding = UDim.new(0, 4)
         list.FillDirection = Enum.FillDirection.Vertical
         list.VerticalAlignment = Enum.VerticalAlignment.Center
         list.Parent = holder
@@ -877,36 +970,77 @@ local function ensureDistanceBillboard(rootPart, data)
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Name = "NameLabel"
         nameLabel.Parent = holder
-        nameLabel.Size = UDim2.new(1, -64, 0, 20)
+        nameLabel.Size = UDim2.new(1, -86, 0, 22)
         nameLabel.BackgroundTransparency = 1
         nameLabel.Text = ""
-        nameLabel.TextColor3 = Color3.fromRGB(248, 248, 252)
-        nameLabel.TextSize = 14
+        nameLabel.TextColor3 = Color3.fromRGB(249, 247, 255)
+        nameLabel.TextSize = 15
         nameLabel.TextWrapped = false
         nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.Font = Enum.Font.GothamBlack
 
         local nameStroke = Instance.new("UIStroke")
         nameStroke.Color = Color3.fromRGB(255, 255, 255)
-        nameStroke.Transparency = 0.78
-        nameStroke.Thickness = 1
+        nameStroke.Transparency = 0.82
+        nameStroke.Thickness = 1.1
         nameStroke.Parent = nameLabel
 
         local distanceLabel = Instance.new("TextLabel")
         distanceLabel.Name = "DistanceLabel"
         distanceLabel.Parent = holder
-        distanceLabel.Size = UDim2.new(1, 0, 0, 15)
+        distanceLabel.Size = UDim2.new(1, 0, 0, 16)
         distanceLabel.BackgroundTransparency = 1
         distanceLabel.Text = ""
-        distanceLabel.TextColor3 = Color3.fromRGB(218, 214, 234)
-        distanceLabel.TextSize = 11
+        distanceLabel.TextColor3 = Color3.fromRGB(205, 198, 230)
+        distanceLabel.TextSize = 10
         distanceLabel.TextXAlignment = Enum.TextXAlignment.Left
-        distanceLabel.Font = Enum.Font.GothamBold
+        distanceLabel.Font = Enum.Font.GothamBlack
     end
 
     data.billboard = billboard
     return billboard
+end
+
+local function ensureFloatingDistanceLabel(rootPart, data)
+    local floatingLabel = rootPart:FindFirstChild("ESPDistLabel")
+
+    if data.floatingDistanceLabel and data.floatingDistanceLabel.Parent ~= rootPart then
+        pcall(function()
+            data.floatingDistanceLabel:Destroy()
+        end)
+        data.floatingDistanceLabel = nil
+        floatingLabel = nil
+    end
+
+    if not floatingLabel or not floatingLabel:IsA("BillboardGui") then
+        if floatingLabel then
+            floatingLabel:Destroy()
+        end
+
+        floatingLabel = Instance.new("BillboardGui")
+        floatingLabel.Name = "ESPDistLabel"
+        floatingLabel.Parent = rootPart
+        floatingLabel.Size = UDim2.new(0, 90, 0, 20)
+        floatingLabel.StudsOffset = Vector3.new(0, 2.5, 0)
+        floatingLabel.AlwaysOnTop = true
+        floatingLabel.MaxDistance = CONFIG.ESP_RENDER_DISTANCE
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Name = "Label"
+        textLabel.Parent = floatingLabel
+        textLabel.Size = UDim2.fromScale(1, 1)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "0 m"
+        textLabel.TextColor3 = Color3.fromRGB(220, 220, 230)
+        textLabel.TextSize = 11
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.AutoLocalize = false
+    end
+
+    data.floatingDistanceLabel = floatingLabel
+    return floatingLabel
 end
 
 local function saveSettings()
@@ -2959,6 +3093,9 @@ while STATE.running do
                             if data.billboard then
                                 data.billboard.Enabled = false
                             end
+                            if data.floatingDistanceLabel then
+                                data.floatingDistanceLabel.Enabled = false
+                            end
                             continue
                         end
 
@@ -2968,80 +3105,21 @@ while STATE.running do
                         end
                         highlight.Enabled = CONFIG.ESP_HIGHLIGHT
 
-                        local billboard = ensureDistanceBillboard(root, data)
-                        billboard.Enabled = CONFIG.ESP_DISTANCE
-                        billboard.MaxDistance = CONFIG.ESP_RENDER_DISTANCE
+                        local floatingLabel = ensureFloatingDistanceLabel(root, data)
+                        floatingLabel.Enabled = CONFIG.ESP_DISTANCE
+                        floatingLabel.MaxDistance = CONFIG.ESP_RENDER_DISTANCE
 
-                        local billboardMetrics = getBillboardMetrics(distance)
-                        billboard.Size = UDim2.new(0, billboardMetrics.width, 0, billboardMetrics.height)
-                        billboard.StudsOffset = Vector3.new(0, billboardMetrics.studsOffset, 0)
+                        if data.billboard then
+                            data.billboard.Enabled = false
+                        end
 
-                        local card = billboard and billboard:FindFirstChild("Card")
-                        if card then
-                            local holder = card:FindFirstChild("Holder")
-                            local nameLabel = holder and holder:FindFirstChild("NameLabel")
-                            local distanceLabel = holder and holder:FindFirstChild("DistanceLabel")
-                            local accent = card:FindFirstChild("Accent")
-                            local cardStroke = card:FindFirstChild("CardStroke")
-                            local glow = billboard:FindFirstChild("Glow")
-                            local topEdge = card:FindFirstChild("TopEdge")
-                            local topEdgeGradient = topEdge and topEdge:FindFirstChildOfClass("UIGradient")
-                            local slash = card:FindFirstChild("Slash")
-                            local distanceChip = card:FindFirstChild("DistanceChip")
-                            local distanceChipStroke = distanceChip and distanceChip:FindFirstChild("DistanceChipStroke")
-                            local pulse = getElectricPulse(model)
-
-                            if accent then
-                                accent.BackgroundColor3 = targetColor
-                            end
-
-                            if cardStroke then
-                                cardStroke.Color = targetColor
-                                cardStroke.Transparency = pulse.cardStrokeTransparency
-                            end
-
-                            if glow then
-                                glow.BackgroundColor3 = targetColor
-                                glow.BackgroundTransparency = pulse.glowTransparency
-                            end
-
-                            if topEdge then
-                                topEdge.BackgroundColor3 = targetColor
-                            end
-
-                            if topEdgeGradient then
-                                topEdgeGradient.Transparency = pulse.edgeTransparency
-                            end
-
-                            if slash then
-                                slash.BackgroundColor3 = targetColor
-                                slash.BackgroundTransparency = pulse.slashTransparency
-                            end
-
-                            if distanceChipStroke then
-                                distanceChipStroke.Color = targetColor
-                                distanceChipStroke.Transparency = pulse.chipStrokeTransparency
-                            end
-
-                            if nameLabel then
-                                nameLabel.Visible = CONFIG.ESP_NAME
-                                nameLabel.Text = CONFIG.ESP_NAME and getTargetDisplayText(model) or ""
-                                nameLabel.TextColor3 = targetColor
-                                nameLabel.TextSize = billboardMetrics.nameTextSize
-                            end
-
-                            if distanceLabel then
-                                distanceLabel.Visible = CONFIG.ESP_DISTANCE
-                                distanceLabel.Text = CONFIG.ESP_DISTANCE and ("RANGE // " .. string.upper(formatStudDistance(distance))) or ""
-                                distanceLabel.TextColor3 = Color3.fromRGB(
-                                    math.clamp(math.floor((targetColor.R * 255) + 72), 0, 255),
-                                    math.clamp(math.floor((targetColor.G * 255) + 72), 0, 255),
-                                    math.clamp(math.floor((targetColor.B * 255) + 72), 0, 255)
-                                )
-                                distanceLabel.TextSize = billboardMetrics.distanceTextSize
-                            end
-
-                            billboard.Enabled = CONFIG.ESP_NAME or CONFIG.ESP_DISTANCE
+                        local floatingText = floatingLabel and floatingLabel:FindFirstChild("Label")
+                        if floatingText then
+                            floatingText.Text = formatMeterDistance(distance)
+                            floatingText.TextColor3 = targetColor
+                        end
+                        if floatingLabel then
+                            floatingLabel.StudsOffset = Vector3.new(0, 2.5, 0)
                         end
                     end
                 end
