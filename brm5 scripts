@@ -1,3 +1,8 @@
+--[[
+    HABIBISCRIPTS
+    Login user: HABIBIONTOP
+]]
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -2640,6 +2645,19 @@ local function processLogin()
     STATE.authenticated = false
     UI.loginStatus.Text = ok and "Acceso guardado, reinyecta para entrar" or ("Acceso valido, pero no se pudo guardar: " .. tostring(message))
     UI.loginStatus.TextColor3 = ok and Color3.fromRGB(196, 158, 255) or Color3.fromRGB(224, 150, 255)
+
+    if ok then
+        UI.loginButton.Text = "REINJECT"
+        UI.loginButton.Active = false
+        UI.loginButton.AutoButtonColor = false
+        pushNotification("HabibiScripts", "Acceso guardado. Reinyecta para entrar.")
+
+        task.delay(1.2, function()
+            if STATE.running then
+                unloadScript()
+            end
+        end)
+    end
 end
 
 tryAutoAuthenticate = function()
