@@ -1,3 +1,8 @@
+--[[
+    HABIBISCRIPTS
+    Login user: HABIBIONTOP
+]]
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -93,6 +98,7 @@ local ESP_TEAM_VISIBLE_COLOR = Color3.fromRGB(196, 158, 255)
 
 local refreshUi
 local applyWorldTime
+local tryAutoAuthenticate
 
 local SETTINGS_FILE = "habibi_suite_settings.json"
 local REMEMBERED_LOGIN_USER = nil
@@ -2630,12 +2636,14 @@ local function processLogin()
 
     REMEMBERED_LOGIN_USER = CONFIG.LOGIN_USER
     LAST_LOGIN_AT = os.time()
-    saveSettings()
+    local ok, message = saveSettings()
 
-    completeAuthentication("Acceso concedido", false)
+    STATE.authenticated = false
+    UI.loginStatus.Text = ok and "Acceso guardado, reinyecta para entrar" or ("Acceso valido, pero no se pudo guardar: " .. tostring(message))
+    UI.loginStatus.TextColor3 = ok and Color3.fromRGB(196, 158, 255) or Color3.fromRGB(224, 150, 255)
 end
 
-local function tryAutoAuthenticate()
+tryAutoAuthenticate = function()
     if REMEMBERED_LOGIN_USER ~= CONFIG.LOGIN_USER then
         return false
     end
