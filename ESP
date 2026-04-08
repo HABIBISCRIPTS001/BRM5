@@ -1,0 +1,23 @@
+while wait(5) do
+	for _, desc in workspace:GetDescendants() do
+		if desc.Name == "Male" then
+			for _, part in desc:GetDescendants() do
+				if desc:FindFirstChild("Highlight") then
+					desc:FindFirstChild("Highlight"):Destroy()
+				end
+			end
+
+			if desc:FindFirstChild("Humanoid") then 
+				local newHightLight = Instance.new("Highlight")
+		
+				newHightLight.Parent = desc
+				newHightLight.Adornee = desc
+				newHightLight.Enabled = true
+				newHightLight.FillColor = Color3.fromRGB(255, 255, 255)
+				newHightLight.OutlineColor = Color3.fromRGB(255, 255, 255)
+				newHightLight.OutlineTransparency = 0.15
+				newHightLight.FillTransparency = 0.55
+			end
+		end
+	end
+end
