@@ -10,13 +10,11 @@ local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local StarterGui = game:GetService("StarterGui")
-local queue_on_teleport = queue_on_teleport
-    or queueonteleport
-    or (syn and syn.queue_on_teleport)
-local TELEPORT_LOADSTRING = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/HABIBISCRIPTS001/BRM5/refs/heads/main/brm5%20scripts"))()'
-
+local queue_on_teleport = queue_on_teleport or queueonteleport
 if queue_on_teleport then
-    pcall(queue_on_teleport, TELEPORT_LOADSTRING)
+	queue_on_teleport([[
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/HABIBISCRIPTS001/BRM5/refs/heads/main/brm5%20scripts"))()
+	]])
 end
 
 local LocalPlayer = Players.LocalPlayer
