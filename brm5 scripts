@@ -10,6 +10,14 @@ local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local StarterGui = game:GetService("StarterGui")
+local queue_on_teleport = queue_on_teleport
+    or queueonteleport
+    or (syn and syn.queue_on_teleport)
+local TELEPORT_LOADSTRING = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/HABIBISCRIPTS001/BRM5/refs/heads/main/brm5%20scripts"))()'
+
+if queue_on_teleport then
+    pcall(queue_on_teleport, TELEPORT_LOADSTRING)
+end
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -26,7 +34,6 @@ local DEFAULT_CONFIG = {
     SHOW_FOV = true,
     TEAM_CHECK = false,
     VISIBILITY_CHECK = false,
-    WORLD_TIME_ENABLED = false,
     ANTI_RECOIL = false,
     ANTI_RECOIL_STRENGTH = 0.35,
     TARGET_PART = "Head",
@@ -98,6 +105,7 @@ local AIMBOT_BIND_NAME = "HabibiAimbotLock"
 local INPUT_CONN = nil
 local RENDER_CONN = nil
 local INPUT_ENDED_CONN = nil
+local INPUT_CHANGED_CONN = nil
 local SCAN_INTERVAL = 0.8
 local NPC_SCAN_INTERVAL = 3
 local VISIBILITY_CACHE_INTERVAL = 0.12
@@ -914,7 +922,6 @@ local function saveSettings()
         SHOW_FOV = CONFIG.SHOW_FOV,
         TEAM_CHECK = CONFIG.TEAM_CHECK,
         VISIBILITY_CHECK = CONFIG.VISIBILITY_CHECK,
-        WORLD_TIME_ENABLED = CONFIG.WORLD_TIME_ENABLED,
         ANTI_RECOIL = CONFIG.ANTI_RECOIL,
         ANTI_RECOIL_STRENGTH = CONFIG.ANTI_RECOIL_STRENGTH,
         TARGET_PART = CONFIG.TARGET_PART,
@@ -2084,10 +2091,6 @@ createChoiceRow(aimbotMain, "TARGET_PART", "Target Part", {"Head", "Chest", "Hum
 end)
 
 local worldMain = createSection(pageWorld, "World")
-createToggle(worldMain, "WORLD_TIME_ENABLED", "Time Override", "Enable or disable the day/night override", function(value)
-    CONFIG.WORLD_TIME_ENABLED = value
-    applyWorldTime()
-end)
 createChoiceRow(worldMain, "WORLD_TIME", "Time Of Day", {"Day", "Night"}, function(choice)
     CONFIG.WORLD_TIME = choice
     applyWorldTime()
@@ -2290,21 +2293,6 @@ local function clampFramePosition(frame, position)
     )
 end
 
-local function startDragging(frame, input)
-    STATE.dragging = true
-    STATE.dragTarget = frame
-    STATE.dragStart = input.Position
-    STATE.dragOrigin = UDim2.new(0, frame.Position.X.Offset, 0, frame.Position.Y.Offset)
-end
-
-local function bindDrag(handle, frame)
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            startDragging(frame, input)
-        end
-    end)
-end
-
 local function updateToggleVisual(id)
     local entry = UI_STATE.toggles[id]
     if not entry then
@@ -2404,10 +2392,6 @@ local function getEspColor(model, isVisible)
 end
 
 applyWorldTime = function()
-    if not CONFIG.WORLD_TIME_ENABLED then
-        return
-    end
-
     if CONFIG.WORLD_TIME == "Night" then
         Lighting.ClockTime = 22
         Lighting.TimeOfDay = "22:00:00"
@@ -2566,6 +2550,11 @@ local function unloadScript()
         INPUT_ENDED_CONN = nil
     end
 
+    if INPUT_CHANGED_CONN then
+        INPUT_CHANGED_CONN:Disconnect()
+        INPUT_CHANGED_CONN = nil
+    end
+
     if RENDER_CONN then
         RENDER_CONN:Disconnect()
         RENDER_CONN = nil
@@ -2621,7 +2610,19 @@ UI.userBox.FocusLost:Connect(function(pressedEnter)
     end
 end)
 
-bindDrag(UI.loginDragHandle, UI.loginFrame)
+local loginDragging, loginDragStart, loginStartPos = false, nil, nil
+UI.loginDragHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        loginDragging = true
+        loginDragStart = input.Position
+        loginStartPos = UI.loginFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                loginDragging = false
+            end
+        end)
+    end
+end)
 
 UI.bindButton.MouseButton1Click:Connect(function()
     STATE.bindMode = true
@@ -2657,15 +2658,55 @@ for tabName, nav in pairs(UI_STATE.navButtons) do
     end)
 end
 
-bindDrag(UI.topBar, UI.panel)
+local dragging, dragStart, startPos = false, nil, nil
+UI.topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = UI.panel.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
 
 INPUT_ENDED_CONN = UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         STATE.dragging = false
         STATE.dragTarget = nil
+        STATE.dragStart = nil
+        STATE.dragOrigin = nil
     elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
         STATE.rightMouseDown = false
         STATE.lockedTarget = nil
+    end
+end)
+
+INPUT_CHANGED_CONN = UserInputService.InputChanged:Connect(function(input)
+    if loginDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - loginDragStart
+        local vp = getViewportSize()
+        UI.loginFrame.Position = UDim2.new(
+            0,
+            math.clamp(loginStartPos.X.Offset + delta.X, 0, vp.X - UI.loginFrame.AbsoluteSize.X),
+            0,
+            math.clamp(loginStartPos.Y.Offset + delta.Y, 0, vp.Y - UI.loginFrame.AbsoluteSize.Y)
+        )
+        syncAuraPosition(UI.loginAura, UI.loginFrame, 30)
+    end
+
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        local vp = getViewportSize()
+        UI.panel.Position = UDim2.new(
+            0,
+            math.clamp(startPos.X.Offset + delta.X, 0, vp.X - UI.panel.AbsoluteSize.X),
+            0,
+            math.clamp(startPos.Y.Offset + delta.Y, 0, vp.Y - UI.panel.AbsoluteSize.Y)
+        )
+        syncAuraPosition(UI.panelAura, UI.panel, 36)
     end
 end)
 
@@ -2747,26 +2788,6 @@ RENDER_CONN = RunService.RenderStepped:Connect(function()
         end
     else
         STATE.activeSlider = nil
-    end
-
-    if STATE.dragging and STATE.dragTarget and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-        local delta = UserInputService:GetMouseLocation() - STATE.dragStart
-        local proposedPosition = UDim2.new(
-            0,
-            STATE.dragOrigin.X.Offset + delta.X,
-            0,
-            STATE.dragOrigin.Y.Offset + delta.Y
-        )
-
-        STATE.dragTarget.Position = clampFramePosition(STATE.dragTarget, proposedPosition)
-        if STATE.dragTarget == UI.panel then
-            syncAuraPosition(UI.panelAura, UI.panel, 36)
-        elseif STATE.dragTarget == UI.loginFrame then
-            syncAuraPosition(UI.loginAura, UI.loginFrame, 30)
-        end
-    else
-        STATE.dragging = false
-        STATE.dragTarget = nil
     end
 
     local cam = getCurrentCamera()
