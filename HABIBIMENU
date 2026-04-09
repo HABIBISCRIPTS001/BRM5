@@ -6,16 +6,15 @@ local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local StarterGui = game:GetService("StarterGui")
-local queue_on_teleport = queue_on_teleport or queueonteleport
-if queue_on_teleport then
-	queue_on_teleport([[
-		loadstring(game:HttpGet("https://raw.githubusercontent.com/HABIBISCRIPTS001/BRM5/refs/heads/main/brm5%20scripts"))()
-	]])
-end
-
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local LocalMouse = LocalPlayer:GetMouse()
+local queue_on_teleport = queue_on_teleport or queueonteleport
+if queue_on_teleport then
+	queue_on_teleport([[
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/HABIBISCRIPTS001/BRM5/refs/heads/main/HABIBIMENU"))()
+	]])
+end
 
 local DEFAULT_CONFIG = {
     LOGIN_USER = "HABIBIONTOP",
